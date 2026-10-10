@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {DDSLoader} from './vendor/DDSLoader.js';
 import {ResourceCache} from './resource-cache.js';
+import {FollowCamera} from './follow-camera.js';
 import {loadCharacters,animateCharacter} from './characters.js';
 let createCharacter, jumpQueued=false;
 const $=id=>document.getElementById(id), canvas=$('view');
@@ -11,9 +12,9 @@ const sun=new THREE.DirectionalLight(0xffe3b0,1.8);sun.position.set(-70,130,-90)
 const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.05,260);camera.position.set(-185,4,165);camera.lookAt(-215,-17,122);
 const dds=new DDSLoader(),materials=new Map(),actors=new Map(),enemies=[],staticMeshes=[];
 const keys=new Set();let state,id,ws,playing=false,yaw=Math.PI,pitch=.3,dragging=false,holdTrain=false,auto=false,selected=0;
-let last=performance.now(),inputAt=0,trainAt=0,lastEvent=null,noticeUntil=0,profileKey='',lastUi=0,cameraAt=0,cameraDistance=6;
+let last=performance.now(),inputAt=0,trainAt=0,lastEvent=null,noticeUntil=0,profileKey='',lastUi=0,cameraAt=0;
 const tracers=[];
-let audio;const raycaster=new THREE.Raycaster(),desired=new THREE.Vector3(),focus=new THREE.Vector3();
+let audio;const raycaster=new THREE.Raycaster(),followCamera=new FollowCamera();let cameraMeshes=[];const broadPhaseCenter=new THREE.Vector3();
 let token;try{token=localStorage.getItem('cordon-profile');if(!/^[a-f0-9]{64}$/.test(token||'')){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');localStorage.setItem('cordon-profile',token)}$('name').value=localStorage.getItem('cordon-name')||'Stalker';}catch{token=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');}
 function send(v){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(v));}
 function notify(text){$('notification').textContent=text;noticeUntil=performance.now()+5000;}
@@ -31,7 +32,7 @@ function connect(){
  let failure='Connection lost. Refresh to reconnect; your progression is saved.';
  ws.onmessage=e=>{
   const msg=JSON.parse(e.data);if(msg.kind==='error'){failure=msg.text;notify(failure);return;}
-  if(msg.kind==='welcome'){id=msg.id;send({kind:'name',name:$('name').value});try{localStorage.setItem('cordon-name',$('name').value)}catch{}playing=true;$('lobby').hidden=true;$('footer').hidden=true;$('hud').hidden=false;document.body.classList.add('playing');canvas.focus();return;}
+  if(msg.kind==='welcome'){id=msg.id;send({kind:'name',name:$('name').value});try{localStorage.setItem('cordon-name',$('name').value)}catch{}playing=true;followCamera.ready=false;$('lobby').hidden=true;$('footer').hidden=true;$('hud').hidden=false;document.body.classList.add('playing');canvas.focus();return;}
   if(msg.kind!=='state')return;state=msg;
   if(lastEvent===null)lastEvent=state.events.at(-1)?.seq||0;
   for(const event of state.events){if(event.seq<=lastEvent)continue;lastEvent=event.seq;if(event.who===id){notify(event.text);if(event.kind==='win')sound(true);}}
@@ -104,9 +105,13 @@ function frame(now){
   state.opponents.forEach((o,n)=>{if(!enemies[n]){const actor=mutant(o.species);actor.position.fromArray(o.pos);const tag=label(`${o.name} · ${o.power}`);tag.position.y=o.species==='dog'?1.5:2.3;actor.add(tag);const ring=new THREE.Mesh(new THREE.RingGeometry(.8,1,40),new THREE.MeshBasicMaterial({color:0xd8f071,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.06;actor.add(ring);actor.userData.ring=ring;enemies[n]=actor;}
    const enemy=enemies[n];animateCharacter(enemy,now,false,state.players.some(p=>p.duel===n));enemy.userData.ring.visible=n===selected;enemy.rotation.y=Math.atan2(-(me.pos[0]-o.pos[0]),-(me.pos[2]-o.pos[2]));const battling=state.players.some(p=>p.duel===n);enemy.position.y=o.pos[1]+(battling?Math.abs(Math.sin(now*.016))*.12:0);
   });
-  focus.set(me.pos[0],me.pos[1]+1.4,me.pos[2]);const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch));
-  if(now-cameraAt>100){cameraAt=now;raycaster.set(focus,dir);raycaster.far=6;const nearby=staticMeshes.filter(m=>m.geometry.boundingSphere.center.distanceTo(focus)<m.geometry.boundingSphere.radius+6);const hits=raycaster.intersectObjects(nearby,false);cameraDistance=hits.length?Math.max(.35,hits[0].distance-.2):6;}
-  desired.copy(focus).addScaledVector(dir,cameraDistance);if(camera.position.distanceTo(desired)>15)camera.position.copy(desired);else camera.position.lerp(desired,1-Math.exp(-dt*15));camera.lookAt(focus);actors.get(id).visible=cameraDistance>.8;
+  followCamera.target(actors.get(id).position,yaw,pitch,dt);
+  const focus=followCamera.focus;
+  if(now-cameraAt>100||broadPhaseCenter.distanceTo(focus)>1){cameraAt=now;broadPhaseCenter.copy(focus);cameraMeshes=staticMeshes.filter(m=>m.userData.cameraSolid&&m.geometry.boundingSphere.center.distanceTo(focus)<m.geometry.boundingSphere.radius+8);}
+  raycaster.set(focus,followCamera.direction);raycaster.far=6;
+  const hits=raycaster.intersectObjects(cameraMeshes,false);
+  followCamera.place(camera,hits.length?hits[0].distance-.2:6,dt);
+  actors.get(id).visible=followCamera.distance>.8;
   if(now-lastUi>200){lastUi=now;updateUI(me);}
  }else{camera.position.set(-185+Math.sin(now*.00003)*10,4,165);camera.lookAt(-215,-17,122);}
  renderer.render(scene,camera);
@@ -129,7 +134,7 @@ vec3 detail=texture2D(groundGrass,groundUV).rgb*blend.r+texture2D(groundRoad,gro
 diffuseColor.rgb*=detail*2.0;
 #endif`);};}materials.set(m.texture,material);textureJobs.push({material,name:m.texture});}
   const geometry=new THREE.BufferGeometry(),interleaved=new THREE.InterleavedBuffer(new Float32Array(data,m.offset,m.vertices*5),5);
-  geometry.setAttribute('position',new THREE.InterleavedBufferAttribute(interleaved,3,0));geometry.setAttribute('uv',new THREE.InterleavedBufferAttribute(interleaved,2,3));geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(data,m.offset+m.vertices*20,m.indices),1));geometry.computeVertexNormals();geometry.computeBoundingSphere();const mesh=new THREE.Mesh(geometry,material);mesh.matrixAutoUpdate=false;mesh.updateMatrix();scene.add(mesh);staticMeshes.push(mesh);
+  geometry.setAttribute('position',new THREE.InterleavedBufferAttribute(interleaved,3,0));geometry.setAttribute('uv',new THREE.InterleavedBufferAttribute(interleaved,2,3));geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(data,m.offset+m.vertices*20,m.indices),1));geometry.computeVertexNormals();geometry.computeBoundingSphere();const mesh=new THREE.Mesh(geometry,material);mesh.userData.cameraSolid=!m.alpha;mesh.matrixAutoUpdate=false;mesh.updateMatrix();scene.add(mesh);staticMeshes.push(mesh);
   if(index%400===0){$('loading').textContent=`Building Cordon · ${Math.round(index/info.meshes.length*100)}%`;await new Promise(r=>setTimeout(r,0));}
  }
  let done=0,missing=0;async function worker(){while(textureJobs.length){const job=textureJobs.pop();try{const loaded=await texture(job.name);job.material.map=loaded;job.material.color.set(0xffffff);job.material.needsUpdate=true;}catch{missing++;}done++;$('loading').textContent=`Applying local textures · ${done}/${materials.size}`;}}

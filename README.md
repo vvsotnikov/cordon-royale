@@ -68,6 +68,7 @@ cargo test
 cargo test cordon_stairs -- --ignored # requires imported Cordon assets
 node --check public/game.js
 node tests/resource-cache.mjs
+node tests/follow-camera.mjs
 # Run a separate server with BIND=127.0.0.1:8788 and a temporary CORDON_SAVES path:
 node tests/room.mjs
 ```
