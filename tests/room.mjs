@@ -1,30 +1,33 @@
 import assert from 'node:assert/strict';
-const base=process.env.GAME_URL||'http://127.0.0.1:8787';
+import {randomBytes} from 'node:crypto';
+const base=process.env.GAME_URL||'http://127.0.0.1:8788';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-assert.equal((await fetch(base+'/health')).status,200);
-function client(){return new Promise((resolve,reject)=>{const ws=new WebSocket(base.replace('http','ws')+'/ws');let state,id;const timer=setTimeout(()=>{ws.close();reject(Error('Handshake timeout'))},15000);ws.onerror=reject;ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.kind==='welcome')id=msg.id;if(msg.kind==='state'){state=msg;if(id){clearTimeout(timer);resolve({ws,get state(){return state},id})}}};})}
-const a=await client(),b=await client();
-const me=()=>a.state.players.find(p=>p.id===a.id);
-const send=v=>a.ws.send(JSON.stringify(v));
+const token=randomBytes(32).toString('hex');
+async function client(key){return new Promise((resolve,reject)=>{
+ const ws=new WebSocket(base.replace('http','ws')+'/ws?token='+key);let id,state;
+ const timer=setTimeout(()=>{ws.close();reject(Error('Handshake timeout'))},10000);
+ ws.onerror=reject;ws.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.kind==='error'){clearTimeout(timer);ws.close();reject(Error(msg.text));}if(msg.kind==='welcome')id=msg.id;if(msg.kind==='state'){state=msg;if(id){clearTimeout(timer);resolve({ws,id,get state(){return state},send(v){ws.send(JSON.stringify(v))},get profile(){return state.players.find(p=>p.id===id)?.profile}})}}};
+})}
+const a=await client(token),b=await client(randomBytes(32).toString('hex'));
 try{
- assert.notEqual(a.id,b.id);send({kind:'name',name:'<script>Test</script>'});await sleep(200);
- assert(a.state.players.some(p=>p.id===b.id));assert(b.state.players.some(p=>p.id===a.id));assert(!me().name.includes('<'));assert(me().pos.every(Number.isFinite));
- assert.equal(a.state.phase,'waiting','run this test on an empty room');
- const before=[...me().pos];const stash=a.state.stashes.filter(s=>!s.open).sort((x,y)=>Math.hypot(x.pos[0]-before[0],x.pos[2]-before[2])-Math.hypot(y.pos[0]-before[0],y.pos[2]-before[2]))[0];
- for(let i=0;i<30;i++){const p=me().pos,dx=stash.pos[0]-p[0],dz=stash.pos[2]-p[2];if(Math.hypot(dx,dz)<2)break;send({forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(50)}
- assert(Math.hypot(...me().pos.map((x,i)=>x-before[i]))>.2,'player actually moves on imported collision');
- for(let i=0;i<35;i++){send({interact:true});await sleep(50)}
- assert(me().armor>=25,'search awards armor');assert(me().meds>=2,'search awards a medkit');assert(a.state.events.some(e=>e.kind==='loot'&&e.who===a.id));
- const armor=me().armor;for(let i=0;i<30;i++){send({interact:true});await sleep(50)}assert.equal(me().armor,armor,'opened stash cannot award twice');
- const pos=[...me().pos];send({forward:999,right:999});await sleep(500);assert(Math.hypot(...me().pos.map((x,i)=>x-pos[i]))<1,'invalid movement cannot teleport');
- const deadline=Date.now()+20000;while(a.state.phase==='waiting'&&Date.now()<deadline)await sleep(100);
- assert.equal(a.state.phase,'active');const ammo=me().ammo;
- for(let i=0;i<8;i++){send({fire:true,yaw:0,pitch:1.4});await sleep(50)}
- assert(me().ammo<ammo,'server consumes ammunition during combat');assert(a.state.events.some(e=>['shot','hit'].includes(e.kind)&&e.who===a.id));
- const reserve=me().reserve;send({reload:true});await sleep(2000);assert.equal(me().ammo,me().weapon?30:12);assert(me().reserve<reserve,'reload transfers reserve ammunition');
- console.log('PASS two clients, shared state, imported terrain movement, stash rewards, no duplicate loot, invalid input rejection.');
+ await sleep(100);assert(a.state.players.some(p=>p.id===b.id));
+ await assert.rejects(client(token),/already connected/);
+ a.send({kind:'name',name:'<script>Test'});a.send({kind:'equip',item:4});await sleep(100);assert.equal(a.profile.weapon,0);assert(!a.profile.name.includes('<'));
+ const before=a.profile.power;for(let i=0;i<20;i++)a.send({kind:'train'});await sleep(100);assert(a.profile.power-before<=1,'training is rate limited');
+ while(a.profile.power<20){a.send({kind:'train'});await sleep(220)}
+ a.send({kind:'challenge',opponent:4});await sleep(100);assert.equal(a.state.players.find(p=>p.id===a.id).duel,null,'distant enemies cannot be challenged');
+ for(let n=0;n<5;n++){
+  a.send({kind:'challenge',opponent:0});await sleep(200);assert.equal(a.state.players.find(p=>p.id===a.id).duel,0);
+  const power=a.profile.power;a.send({kind:'train'});await sleep(100);assert.equal(a.profile.power,power,'no training during combat');
+  await sleep(2900);assert.equal(a.profile.wins,n+1);
+  if(n===0){assert.equal(a.profile.rubles,15);a.send({kind:'buy',item:1});await sleep(100);assert.equal(a.profile.weapon,1);assert.equal(a.profile.rubles,0);}
+ }
+ a.send({kind:'promote'});await sleep(100);assert.equal(a.profile.rank,1);assert.equal(a.profile.power,0);assert(a.profile.inventory.includes(1));
+ a.send({kind:'train'});await sleep(250);assert.equal(a.profile.power,2);
+ const saved=structuredClone(a.profile);saved.inventory.sort((a,b)=>a-b);a.ws.close();await sleep(300);
+ const resumed=await client(token);try{assert.deepEqual(resumed.profile,saved)}finally{resumed.ws.close()}
+ await sleep(2200);
+ console.log('PASS shared room, profile identity, train rate limit, inventory ownership/purchase, enemy range, duel rewards, promotions, and reconnect persistence.');
 }finally{a.ws.close();b.ws.close()}
-await sleep(300);const c=await client();try{assert.equal(c.state.phase,'waiting');assert.equal(c.state.players.find(p=>p.id===c.id).hp,100);assert(c.state.stashes.every(s=>!s.open));console.log('PASS empty room resets inventory and stashes for the next player.')}finally{c.ws.close()}
-
 
 

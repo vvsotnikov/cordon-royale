@@ -9,3 +9,4 @@
 *.cform
 *.geom*
 /public/map.json
+/profiles*.json
