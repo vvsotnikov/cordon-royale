@@ -11,8 +11,8 @@ const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x8c9990,.0035);scene.
 const sun=new THREE.DirectionalLight(0xffe3b0,1.8);sun.position.set(-70,130,-90);scene.add(sun);
 const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.05,260);camera.position.set(-185,4,165);camera.lookAt(-215,-17,122);
 const dds=new DDSLoader(),materials=new Map(),actors=new Map(),enemies=[],staticMeshes=[];
-const keys=new Set();let state,id,ws,playing=false,yaw=Math.PI,pitch=.3,dragging=false,holdTrain=false,auto=false,selected=0;
-let last=performance.now(),inputAt=0,trainAt=0,lastEvent=null,noticeUntil=0,profileKey='',lastUi=0,cameraAt=0;
+const keys=new Set();let state,id,ws,playing=false,yaw=Math.PI,pitch=.3,dragging=false,selected=-1;
+let last=performance.now(),inputAt=0,lastEvent=null,noticeUntil=0,profileKey='',lastUi=0,cameraAt=0;
 const tracers=[];
 let audio;const raycaster=new THREE.Raycaster(),followCamera=new FollowCamera();let cameraMeshes=[];const broadPhaseCenter=new THREE.Vector3();
 let token;try{token=localStorage.getItem('cordon-profile');if(!/^[a-f0-9]{64}$/.test(token||'')){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');localStorage.setItem('cordon-profile',token)}$('name').value=localStorage.getItem('cordon-name')||'Stalker';}catch{token=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');}
@@ -37,53 +37,61 @@ function connect(){
   if(lastEvent===null)lastEvent=state.events.at(-1)?.seq||0;
   for(const event of state.events){if(event.seq<=lastEvent)continue;lastEvent=event.seq;if(event.who===id){notify(event.text);if(event.kind==='win')sound(true);}}
  };
- ws.onclose=()=>{playing=false;keys.clear();auto=false;holdTrain=false;notify(failure);$('connection').textContent='DISCONNECTED';$('deploy').disabled=false;};
+ ws.onclose=()=>{playing=false;keys.clear();notify(failure);$('connection').textContent='DISCONNECTED';$('deploy').disabled=false;};
  ws.onerror=()=>notify('Cannot reach the room.');
 }
 $('deploy').onclick=connect;
-$('train').onclick=()=>{send({kind:'train'});sound();};
-$('auto').onclick=()=>{auto=!auto;$('auto').textContent=`AUTO: ${auto?'ON':'OFF'}`;$('auto').classList.toggle('active',auto);};
-function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();holdTrain=false;}
+$('sit').onclick=()=>send({kind:'sit'});
+$('openBox').onclick=()=>send({kind:'open_box'});
+function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();}
 $('inventoryToggle').onclick=toggleInventory;$('closeInventory').onclick=toggleInventory;
-$('challenge').onclick=()=>send({kind:'challenge',opponent:selected});
-$('promote').onclick=()=>send({kind:'promote'});$('home').onclick=()=>send({kind:'home'});
-canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('mousedown',e=>{canvas.focus();if(e.button===2)dragging=true;if(e.button===0)holdTrain=true;});
-document.addEventListener('mouseup',()=>{dragging=false;holdTrain=false;});
+$('challenge').onclick=()=>send({kind:'challenge'});
+$('home').onclick=()=>send({kind:'home'});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('mousedown',e=>{canvas.focus();if(e.button===2)dragging=true;});
+document.addEventListener('mouseup',()=>{dragging=false;});
 document.addEventListener('mousemove',e=>{if(dragging){yaw-=e.movementX*.004;pitch=Math.max(-.1,Math.min(.8,pitch+e.movementY*.003));}});
 document.addEventListener('keydown',e=>{
  if(!playing||e.target instanceof HTMLInputElement)return;
  if(e.code==='Space'&&!e.repeat)jumpQueued=true;
- if(e.code==='KeyI'&&!e.repeat)toggleInventory();if(e.code==='Escape'){$('inventory').hidden=true;keys.clear();holdTrain=false;}
+ if(e.code==='KeyI'&&!e.repeat)toggleInventory();if(e.code==='Escape'){$('inventory').hidden=true;keys.clear();}
  if(!$('inventory').hidden)return;
- if(e.code==='KeyE'&&!e.repeat)send({kind:'challenge',opponent:selected});if(e.code==='KeyB'&&!e.repeat)send({kind:'home'});
+ if(e.code==='KeyF'&&!e.repeat)send({kind:'sit'});if(e.code==='KeyR'&&!e.repeat&&nearestExp>=0)send({kind:'claim_exp',stage:nearestExp});
+ if(e.code==='KeyE'&&!e.repeat)send({kind:'challenge'});if(e.code==='KeyB'&&!e.repeat)send({kind:'home'});
  if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)){keys.add(e.code);e.preventDefault();}
 });
-document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();holdTrain=false;dragging=false;});
+document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();dragging=false;});
+let nearestExp=-1,campVisual;const stageButtons=[];
+function unlocked(p,n){return n===0||p.trophies.includes(n-1);}
 function updateInventory(me){
- const p=me.profile;const key=JSON.stringify([p.inventory,p.rubles,p.weapon,p.armor,me.duel]);if(profileKey===key)return;profileKey=key;
- $('equipment').textContent=`WEAPON: ${state.items[p.weapon].name}   /   ARMOR: ${state.items[p.armor].name}`;
- $('items').replaceChildren();state.items.forEach((item,n)=>{
-  const equipped=n===p.weapon||n===p.armor,owned=p.inventory.includes(n),card=document.createElement('div');card.className='item'+(equipped?' equipped':'');
-  const symbol=document.createElement('span');symbol.className='symbol';symbol.textContent=item.slot==='weapon'?'⌁':'♜';
-  const title=document.createElement('b');title.textContent=item.name;const desc=document.createElement('small');desc.textContent=`${item.slot.toUpperCase()} · +${item.power} strength`;
-  const button=document.createElement('button');button.textContent=equipped?'EQUIPPED':owned?'EQUIP':`BUY · ₽${item.price}`;button.disabled=equipped||(!owned&&p.rubles<item.price)||me.duel!==null;button.onclick=()=>send({kind:owned?'equip':'buy',item:n});
-  card.append(symbol,title,desc,button);$('items').append(card);
- });
+ const p=me.profile,key=JSON.stringify([p.inventory,p.lootboxes,p.weapon,p.armor,me.duel]);if(profileKey===key)return;profileKey=key;
+ $('equipment').textContent=`WEAPON: ${state.items[p.weapon].name} / ARMOR: ${state.items[p.armor].name}`;
+ $('openBox').textContent=`OPEN LOOTBOX · ${p.lootboxes} AVAILABLE`;$('openBox').disabled=!p.lootboxes||me.duel!==null;
+ $('items').replaceChildren();state.items.forEach((item,n)=>{const owned=p.inventory.includes(n),equipped=n===p.weapon||n===p.armor,card=document.createElement('div');card.className='item'+(equipped?' equipped':'');const title=document.createElement('b'),desc=document.createElement('small'),button=document.createElement('button');title.textContent=item.name;desc.textContent=`${item.slot.toUpperCase()} · +${item.power} power`;button.textContent=equipped?'EQUIPPED':owned?'EQUIP':'FOUND IN LOOTBOXES';button.disabled=!owned||equipped||me.duel!==null;button.onclick=()=>send({kind:'equip',item:n});card.append(title,desc,button);$('items').append(card);});
 }
 function updateUI(me){
- const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} fieldcraft + ${total-p.power} equipment`;
- $('rubles').textContent=p.rubles.toLocaleString();$('wins').textContent=p.wins.toLocaleString();$('rank').textContent=`${state.ranks[p.rank].toUpperCase()} · ×${2**p.rank} TRAINING`;
- const cost=state.promotions[p.rank];$('promote').textContent=cost?`PROMOTE · ${cost} WINS`:'LEGEND';$('promote').disabled=!cost||p.wins<cost||me.duel!==null;
- $('promotionHint').textContent=cost?'Resets fieldcraft. Keeps inventory & rubles. Doubles training gains.':'You reached the highest rank.';
- $('train').textContent=`PRACTICE +${2**p.rank}`;$('train').disabled=me.duel!==null;
- $('opponents').replaceChildren();state.opponents.forEach((o,n)=>{
-  const distance=Math.hypot(...o.pos.map((v,i)=>v-me.pos[i]));const button=document.createElement('button');button.className='threat'+(n===selected?' selected':'');
-  const text=document.createElement('div'),name=document.createElement('b'),desc=document.createElement('small');name.textContent=o.name;desc.textContent=`${o.power.toLocaleString()} strength · ${Math.round(distance)}m · +${o.wins} wins`;text.append(name,desc);const icon=document.createElement('span');icon.textContent=total>=o.power?'✓':'↑';button.append(text,icon);button.onclick=()=>{selected=n;notify(`Track ${o.name}: approach the marked enemy, then press E.`);};$('opponents').append(button);
- });
- const enemy=state.opponents[selected],distance=Math.hypot(...enemy.pos.map((v,i)=>v-me.pos[i]));$('challenge').disabled=distance>6||me.duel!==null;$('challenge').textContent=distance>6?`${Math.round(distance)}m TO ${enemy.name.toUpperCase()}`:`FIGHT ${enemy.name.toUpperCase()} [E]`;
- $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(1-me.duel_remaining/3)*100+'%';$('duelHint').textContent=`Your strength ${total} / Enemy ${o.power}`;}
- $('leaderboard').replaceChildren();[...state.players].sort((a,b)=>strength(b.profile)-strength(a.profile)).forEach(player=>{const row=document.createElement('div');row.className='score';const name=document.createElement('span'),score=document.createElement('b');name.textContent=player.profile.name+(player.id===id?' (you)':'');score.textContent=strength(player.profile).toLocaleString();row.append(name,score);$('leaderboard').append(row);});
+ const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} base + ${total-p.power} equipment`;$('exp').textContent=p.exp.toLocaleString();
+ const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
+ $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=me.sitting?'SITTING · +1 POWER / SECOND':'CAMPFIRE · SIT TO GAIN POWER';
+ $('opponents').replaceChildren();state.opponents.forEach((o,n)=>{const row=document.createElement('div');row.className='threat'+(n===selected?' selected':'');row.textContent=`${n+1}. ${o.name} · ${o.power} power · ${p.trophies.includes(n)?'DEFEATED':unlocked(p,n)?'UNLOCKED':'LOCKED'}`;$('opponents').append(row);});
+ $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
+ $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(1-me.duel_remaining/3)*100+'%';$('duelHint').textContent=`Your power ${total} / Enemy ${o.power}`;}
+ $('leaderboard').replaceChildren();[...state.players].sort((a,b)=>strength(b.profile)-strength(a.profile)).forEach(player=>{const row=document.createElement('div');row.className='score';row.textContent=`${player.profile.name}${player.id===id?' (you)':''} · ${strength(player.profile)}`;$('leaderboard').append(row);});
  $('connection').textContent=`LIVE · ${state.players.length} STALKERS · AUTOSAVE`;updateInventory(me);
+}
+function stageUI(me){
+ nearestExp=-1;let best=Infinity;
+ state.opponents.forEach((o,n)=>{
+  let button=stageButtons[n];if(!button){button=document.createElement('button');button.className='stage-exp';button.onclick=()=>send({kind:'claim_exp',stage:n});$('stageMarkers').append(button);stageButtons[n]=button;}
+  const point=new THREE.Vector3(...o.reward_pos).add(new THREE.Vector3(0,.8,0)),distance=point.clone().add(new THREE.Vector3(0,-.8,0)).distanceTo(new THREE.Vector3(...me.pos)),available=unlocked(me.profile,n);
+  button.textContent=available?`GET ${o.exp} EXP · ${distance<=2.5?'[R]':Math.ceil(distance)+'m'}`:`🔒 ${o.exp} EXP · DEFEAT ${state.opponents[n-1].name.toUpperCase()}`;button.disabled=!available||distance>2.5||me.duel!==null;
+  if(!button.disabled&&distance<best){best=distance;nearestExp=n;}
+  point.project(camera);button.hidden=point.z>1||point.z< -1||Math.abs(point.x)>1||Math.abs(point.y)>1||distance>18;button.style.left=(point.x*.5+.5)*innerWidth+'px';button.style.top=(-point.y*.5+.5)*innerHeight+'px';
+ });
+}
+function makeCamp(){
+ campVisual=new THREE.Group();campVisual.position.fromArray(state.campfire);scene.add(campVisual);
+ for(let n=0;n<4;n++){const log=new THREE.Mesh(new THREE.CylinderGeometry(.12,.16,1.4,8),new THREE.MeshStandardMaterial({color:0x483321}));log.rotation.z=Math.PI/2;log.rotation.y=n*Math.PI/4;log.position.y=.15;campVisual.add(log);}
+ const flame=new THREE.Mesh(new THREE.ConeGeometry(.35,.9,7),new THREE.MeshBasicMaterial({color:0xff9933,transparent:true,opacity:.8}));flame.position.y=.55;campVisual.add(flame);const light=new THREE.PointLight(0xff9933,5,8);light.position.y=1;campVisual.add(light);const tag=label('CAMPFIRE · F TO SIT');tag.scale.set(1.8,.34,1);tag.position.y=1.2;campVisual.add(tag);
 }
 function frame(now){
  requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,.05);last=now;
@@ -93,10 +101,11 @@ function frame(now){
   const me=state.players.find(p=>p.id===id);if(!me)return;
   if(keys.has('ArrowLeft'))yaw+=dt*1.8;if(keys.has('ArrowRight'))yaw-=dt*1.8;if(keys.has('ArrowUp'))pitch=Math.max(-.1,pitch-dt);if(keys.has('ArrowDown'))pitch=Math.min(.8,pitch+dt);
   if(now-inputAt>45){inputAt=now;send({kind:'input',forward:Number(keys.has('KeyW'))-Number(keys.has('KeyS')),right:Number(keys.has('KeyD'))-Number(keys.has('KeyA')),yaw,sprint:keys.has('ShiftLeft'),jump:keys.has('Space')||jumpQueued});jumpQueued=false;}
-  if((auto||holdTrain)&&now-trainAt>205&&me.duel===null){trainAt=now;send({kind:'train'});}
+  if(!campVisual)makeCamp();
+  selected=-1;let closest=4.5;state.opponents.forEach((o,n)=>{const d=Math.hypot(...o.pos.map((v,i)=>v-me.pos[i]));if(d<=closest){closest=d;selected=n;}});
   const present=new Set();for(const p of state.players){present.add(p.id);let actor=actors.get(p.id);if(!actor){actor=stalker();actors.set(p.id,actor);actor.position.fromArray(p.pos);const tag=label(p.profile.name);tag.position.y=2.15;tag.visible=p.id!==id;actor.add(tag);}
    const moving=actor.position.distanceTo(new THREE.Vector3(...p.pos))>.025;actor.position.lerp(new THREE.Vector3(...p.pos),1-Math.exp(-dt*18));actor.rotation.y=p.yaw;
-   const data=actor.userData;animateCharacter(actor,now,moving,p.training>0||p.duel!==null);
+   const data=actor.userData;animateCharacter(actor,now,moving,p.duel!==null,p.sitting);
    if(p.duel!==null){const o=state.opponents[p.duel];actor.rotation.y=Math.atan2(-(o.pos[0]-p.pos[0]),-(o.pos[2]-p.pos[2]));
     if(now-(data.lastShot||0)>300){data.lastShot=now;const geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...p.pos).add(new THREE.Vector3(0,1.15,0)),new THREE.Vector3(...o.pos).add(new THREE.Vector3(0,o.species==='dog'?.5:1.1,0))]);const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color:0xffd786,transparent:true,opacity:.8}));scene.add(line);tracers.push({line,until:now+70});if(p.id===id)sound();}
    }
@@ -112,6 +121,7 @@ function frame(now){
   const hits=raycaster.intersectObjects(cameraMeshes,false);
   followCamera.place(camera,hits.length?hits[0].distance-.2:6,dt);
   actors.get(id).visible=followCamera.distance>.8;
+  stageUI(me);
   if(now-lastUi>200){lastUi=now;updateUI(me);}
  }else{camera.position.set(-185+Math.sin(now*.00003)*10,4,165);camera.lookAt(-215,-17,122);}
  renderer.render(scene,camera);

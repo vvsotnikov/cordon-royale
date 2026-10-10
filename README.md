@@ -3,13 +3,20 @@
 A third-person browser progression game in the actual Anomaly Cordon map.
 One Rust server hosts a shared camp with up to 12 players.
 
-Practice to build fieldcraft, equip weapons and armor to increase combat strength,
-and challenge mutants or hostile stalkers. Encounters resolve after three seconds:
-combat strength at least equal to the enemy's strength wins. This is a stat-based
-progression game, not the previous aiming/shooting battle royale. Enemies award
-wins and rubles; first victories against tougher enemies also award inventory loot.
-Buy or equip items in the inventory. Promotions spend wins and reset fieldcraft,
-keep inventory and rubles, and double future training gains. There are no paid items.
+Power determines fight outcomes; EXP is a progression score only. Sit by the
+campfire (F) to gain one base power per second. Moving or jumping stands up.
+Weapons and armor add power while equipped. Approach an enemy and press E to
+fight it; the server selects the nearest enemy within 4.5 metres. Encounters
+resolve after three seconds, with power at least equal to the enemy winning.
+
+Each enemy is a stage. The dog’s EXP marker is unlocked initially; defeating an
+enemy unlocks the following stage and its marker. Walk to a marker and click
+“Get X EXP” (or R) to collect 1/5/25/100/500 EXP and return to camp. Claims are
+repeatable, require proximity, and preserve power and inventory. Each victory
+has a 5% chance to award a lootbox. Open boxes in inventory, then equip the weapon
+or armor. Boxes prefer unowned equipment; a completed collection yields duplicates.
+There are no purchases, practice clicks or promotions. Existing saves keep power,
+equipment and defeated enemies; EXP and unopened boxes start at zero.
 
 ## Run
 
@@ -25,7 +32,8 @@ cargo run --release
 Open http://localhost:8787 or the host's LAN address. All clients of one server
 share the same room. WASD moves, Shift sprints, right-drag or arrow keys orbit the
 camera, Space jumps, E challenges the selected nearby enemy, I opens inventory,
-and B returns to camp. The Auto button repeats practice. Desktop keyboard/mouse required.
+F sits or stands at the fire, R claims nearby EXP, and B returns to camp.
+Desktop keyboard/mouse required.
 
 Profiles save every two seconds to `D:/GameAssets/cordon-royale/profiles.json`;
 override with `CORDON_SAVES`. A random browser-local token identifies the profile.
@@ -75,5 +83,5 @@ node tests/collision-materials.mjs
 node tests/room.mjs
 ```
 
-GitHub builds remain disabled. The server owns movement, training rate, inventory,
-rewards and promotions. The client sends actions, never balances or item ownership.
+GitHub builds remain disabled. The server owns movement, campfire training, inventory, stage unlocks,
+EXP claims and lootbox rewards. The client sends actions, never balances or item ownership.

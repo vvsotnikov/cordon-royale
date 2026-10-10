@@ -4,70 +4,57 @@ pub struct Item {
     pub name: &'static str,
     pub slot: &'static str,
     pub power: u64,
-    pub price: u64,
 }
 pub const ITEMS: [Item; 8] = [
     Item {
         name: "PM pistol",
         slot: "weapon",
         power: 0,
-        price: 0,
     },
     Item {
         name: "TOZ shotgun",
         slot: "weapon",
         power: 30,
-        price: 15,
     },
     Item {
         name: "AK-74",
         slot: "weapon",
         power: 150,
-        price: 100,
     },
     Item {
         name: "LR-300",
         slot: "weapon",
         power: 700,
-        price: 500,
     },
     Item {
         name: "Gauss rifle",
         slot: "weapon",
         power: 3000,
-        price: 2500,
     },
     Item {
         name: "Leather jacket",
         slot: "armor",
         power: 0,
-        price: 0,
     },
     Item {
         name: "SEVA suit",
         slot: "armor",
         power: 200,
-        price: 180,
     },
     Item {
         name: "Exoskeleton",
         slot: "armor",
         power: 1500,
-        price: 1200,
     },
 ];
-pub const RANKS: [&str; 7] = [
-    "Rookie", "Stalker", "Hunter", "Veteran", "Expert", "Master", "Legend",
-];
-pub const PROMOTIONS: [u64; 6] = [5, 15, 40, 100, 250, 600];
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct Profile {
     pub name: String,
     pub power: u64,
-    pub rubles: u64,
-    pub wins: u64,
-    pub rank: usize,
+    pub exp: u64,
+    pub lootboxes: u64,
     pub inventory: Vec<usize>,
     pub weapon: usize,
     pub armor: usize,
@@ -78,9 +65,8 @@ impl Default for Profile {
         Self {
             name: "Stalker".into(),
             power: 0,
-            rubles: 0,
-            wins: 0,
-            rank: 0,
+            exp: 0,
+            lootboxes: 0,
             inventory: vec![0, 5],
             weapon: 0,
             armor: 5,
@@ -90,7 +76,6 @@ impl Default for Profile {
 }
 impl Profile {
     pub fn sanitize(&mut self) {
-        self.rank = self.rank.min(RANKS.len() - 1);
         self.inventory.retain(|&n| n < ITEMS.len());
         self.inventory.extend([0, 5]);
         self.inventory.sort_unstable();
@@ -101,6 +86,9 @@ impl Profile {
         if !self.inventory.contains(&self.armor) || ITEMS[self.armor].slot != "armor" {
             self.armor = 5;
         }
+        self.trophies.retain(|&n| n < 5);
+        self.trophies.sort_unstable();
+        self.trophies.dedup();
         self.name = self
             .name
             .chars()
@@ -112,31 +100,21 @@ impl Profile {
         }
     }
     pub fn gain(&self) -> u64 {
-        1_u64 << self.rank
+        1
     }
     pub fn strength(&self) -> u64 {
         self.power
             .saturating_add(ITEMS[self.weapon].power)
             .saturating_add(ITEMS[self.armor].power)
     }
-    pub fn train(&mut self) -> u64 {
-        let gain = self.gain();
-        self.power = self.power.saturating_add(gain).min(1_000_000_000_000);
-        gain
+    pub fn train(&mut self) {
+        self.power = self
+            .power
+            .saturating_add(self.gain())
+            .min(1_000_000_000_000);
     }
-    pub fn buy(&mut self, n: usize) -> Result<(), &'static str> {
-        if n >= ITEMS.len() {
-            return Err("Unknown item.");
-        }
-        if self.inventory.contains(&n) {
-            return Err("You already own this item.");
-        }
-        if self.rubles < ITEMS[n].price {
-            return Err("Earn more rubles by defeating enemies.");
-        }
-        self.rubles -= ITEMS[n].price;
-        self.inventory.push(n);
-        self.equip(n)
+    pub fn unlocked(&self, stage: usize) -> bool {
+        stage == 0 || self.trophies.contains(&(stage - 1))
     }
     pub fn equip(&mut self, n: usize) -> Result<(), &'static str> {
         if n >= ITEMS.len() || !self.inventory.contains(&n) {
@@ -149,79 +127,62 @@ impl Profile {
         }
         Ok(())
     }
-    pub fn promote(&mut self) -> Result<(), &'static str> {
-        if self.rank >= PROMOTIONS.len() {
-            return Err("You are already a Legend.");
+    pub fn victory(&mut self, stage: usize, roll: u32) -> bool {
+        if !self.trophies.contains(&stage) {
+            self.trophies.push(stage);
         }
-        if self.wins < PROMOTIONS[self.rank] {
-            return Err("Earn more wins before promotion.");
+        let drop = roll < 5;
+        if drop {
+            self.lootboxes = self.lootboxes.saturating_add(1);
         }
-        self.wins -= PROMOTIONS[self.rank];
-        self.rank += 1;
-        self.power = 0;
-        Ok(())
+        drop
     }
-    pub fn reward(
-        &mut self,
-        enemy: usize,
-        wins: u64,
-        rubles: u64,
-        drop: Option<usize>,
-    ) -> Option<&'static str> {
-        self.wins = self.wins.saturating_add(wins);
-        self.rubles = self.rubles.saturating_add(rubles);
-        if self.trophies.contains(&enemy) {
-            return None;
+    pub fn open_box(&mut self, roll: u32) -> Result<&'static str, &'static str> {
+        if self.lootboxes == 0 {
+            return Err("No lootboxes. Each victory has a 5% drop chance.");
         }
-        self.trophies.push(enemy);
-        if let Some(n) = drop.filter(|n| !self.inventory.contains(n)) {
-            self.inventory.push(n);
-            Some(ITEMS[n].name)
-        } else {
-            None
+        self.lootboxes -= 1;
+        let pool = [1, 2, 3, 4, 6, 7];
+        let missing: Vec<_> = pool
+            .into_iter()
+            .filter(|n| !self.inventory.contains(n))
+            .collect();
+        if missing.is_empty() {
+            return Ok("Collection complete — duplicate equipment.");
         }
+        let n = missing[roll as usize % missing.len()];
+        self.inventory.push(n);
+        Ok(ITEMS[n].name)
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn inventory_requires_ownership_and_spends_exact_price() {
+    fn unlocks_and_rare_loot() {
         let mut p = Profile::default();
+        assert!(p.unlocked(0));
+        assert!(!p.unlocked(1));
+        assert!(!p.victory(0, 5));
+        assert!(p.unlocked(1));
+        assert_eq!(p.lootboxes, 0);
+        assert!(p.victory(0, 4));
+        assert_eq!(p.lootboxes, 1);
         assert!(p.equip(4).is_err());
-        assert!(p.buy(1).is_err());
-        p.rubles = 15;
-        p.buy(1).unwrap();
-        assert_eq!(p.rubles, 0);
+        p.open_box(0).unwrap();
+        assert!(p.inventory.contains(&1));
+        assert_eq!(p.lootboxes, 0);
+        assert!(p.open_box(0).is_err());
+        p.equip(1).unwrap();
         assert_eq!(p.strength(), 30);
-        assert!(p.buy(1).is_err());
-        p.equip(0).unwrap();
-        assert_eq!(p.strength(), 0);
     }
     #[test]
-    fn promotion_keeps_gear_and_resets_fieldcraft() {
-        let mut p = Profile {
-            power: 100,
-            wins: 5,
-            rubles: 15,
-            ..Default::default()
-        };
-        p.buy(1).unwrap();
-        p.promote().unwrap();
-        assert_eq!(p.power, 0);
-        assert_eq!(p.strength(), 30);
-        assert_eq!(p.train(), 2);
-        assert!(p.promote().is_err());
-    }
-    #[test]
-    fn first_kill_loot_is_owned_once() {
-        let mut p = Profile::default();
-        assert_eq!(p.reward(1, 3, 50, Some(1)), Some("TOZ shotgun"));
-        assert_eq!(p.reward(1, 3, 50, Some(1)), None);
-        assert_eq!(p.wins, 6);
-        assert_eq!(p.inventory.iter().filter(|&&n| n == 1).count(), 1);
-        let saved = serde_json::to_string(&p).unwrap();
-        let restored: Profile = serde_json::from_str(&saved).unwrap();
-        assert!(restored.inventory.contains(&1));
+    fn old_profile_migrates() {
+        let mut p:Profile=serde_json::from_str(r#"{"name":"Old","power":100,"wins":3,"rubles":90,"rank":2,"inventory":[0,1,5],"trophies":[0]}"#).unwrap();
+        p.sanitize();
+        assert_eq!(p.exp, 0);
+        assert_eq!(p.power, 100);
+        assert!(p.inventory.contains(&1));
+        assert!(p.unlocked(1));
     }
 }

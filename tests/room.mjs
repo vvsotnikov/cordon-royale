@@ -19,21 +19,21 @@ try{
  await sleep(100);assert(a.state.players.some(p=>p.id===b.id));
  await assert.rejects(client(token),/already connected/);
  a.send({kind:'name',name:'<script>Test'});a.send({kind:'equip',item:4});await sleep(100);assert.equal(a.profile.weapon,0);assert(!a.profile.name.includes('<'));
- const before=a.profile.power;for(let i=0;i<20;i++)a.send({kind:'train'});await sleep(100);assert(a.profile.power-before<=1,'training is rate limited');
- while(a.profile.power<20){a.send({kind:'train'});await sleep(220)}
- a.send({kind:'challenge',opponent:4});await sleep(100);assert.equal(a.state.players.find(p=>p.id===a.id).duel,null,'distant enemies cannot be challenged');
- for(let n=0;n<5;n++){
-  a.send({kind:'challenge',opponent:0});await sleep(200);assert.equal(a.state.players.find(p=>p.id===a.id).duel,0);
-  const power=a.profile.power;a.send({kind:'train'});await sleep(100);assert.equal(a.profile.power,power,'no training during combat');
-  await sleep(2900);assert.equal(a.profile.wins,n+1);
-  if(n===0){assert.equal(a.profile.rubles,15);a.send({kind:'buy',item:1});await sleep(100);assert.equal(a.profile.weapon,1);assert.equal(a.profile.rubles,0);}
- }
- a.send({kind:'promote'});await sleep(100);assert.equal(a.profile.rank,1);assert.equal(a.profile.power,0);assert(a.profile.inventory.includes(1));
- a.send({kind:'train'});await sleep(250);assert.equal(a.profile.power,2);
+ const before=a.profile.power;for(let i=0;i<20;i++)a.send({kind:'train'});await sleep(100);assert.equal(a.profile.power,before,'old practice command disabled');
+ a.send({kind:'claim_exp',stage:1});await sleep(100);assert.equal(a.profile.exp,0,'locked remote EXP claim rejected');
+ a.send({kind:'sit'});await sleep(1200);assert(a.profile.power>before,'sitting trains automatically');
+ while(a.profile.power<20)await sleep(500);
+ a.send({kind:'sit'});await sleep(100);const trained=a.profile.power;
+ a.send({kind:'challenge'});await sleep(200);assert.equal(a.state.players.find(p=>p.id===a.id).duel,0,'nearest enemy chosen by server');
+ await sleep(3100);assert(a.profile.trophies.includes(0));assert.equal(a.profile.power,trained);assert.equal(a.profile.exp,0,'victories do not directly grant EXP');
+ a.send({kind:'buy',item:4});await sleep(100);assert.equal(a.profile.weapon,0,'trader removed');
+ const marker=a.state.opponents[0].reward_pos;
+ for(let n=0;n<80;n++){const pos=a.state.players.find(p=>p.id===a.id).pos,dx=marker[0]-pos[0],dz=marker[2]-pos[2];if(Math.hypot(dx,dz)<1.5)break;a.send({kind:'input',forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(70);}
+ a.send({kind:'input'});await sleep(100);a.send({kind:'claim_exp',stage:0});await sleep(150);assert.equal(a.profile.exp,1);assert.equal(a.state.players.find(p=>p.id===a.id).pos[0],-205,'EXP returns to camp');
  const saved=structuredClone(a.profile);saved.inventory.sort((a,b)=>a-b);a.ws.close();await sleep(300);
  const resumed=await client(token);try{assert.deepEqual(resumed.profile,saved)}finally{resumed.ws.close()}
  await sleep(2200);
- console.log('PASS shared room, profile identity, train rate limit, inventory ownership/purchase, enemy range, duel rewards, promotions, and reconnect persistence.');
+ console.log('PASS shared room, profile identity, campfire training, removed practice/trader, stage gates, nearest-enemy battle, and reconnect persistence.');
 }finally{a.ws.close();b.ws.close()}
 
 

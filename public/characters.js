@@ -29,11 +29,13 @@ export async function loadCharacters(resources,texture){
   return root;
  };
 }
-export function animateCharacter(root,time,moving,active){
- const {bones,rest}=root.userData;
+export function animateCharacter(root,time,moving,active,sitting=false){
+ const {bones,rest}=root.userData;root.children[0].position.y=sitting?-.5:0;
  bones.forEach((bone,i)=>{
   bone.quaternion.copy(rest[i]);const name=bone.name.toLowerCase();
   const side=/(_l_|left)/.test(name)?1:-1;
+  if(sitting&&/thigh/.test(name))bone.rotateX(-1.3);
+  if(sitting&&/calf/.test(name))bone.rotateX(1.3);
   if(/upperarm/.test(name))bone.rotateZ(-side*.95);
   if(/thigh|upperarm/.test(name)&&moving)bone.rotateX(Math.sin(time*.014+(side>0?0:Math.PI))*.4);
   if(/forearm/.test(name))bone.rotateX(active?-.9:-.2);

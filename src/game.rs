@@ -27,7 +27,7 @@ pub struct Player {
     pub profile: Profile,
     pub duel: Option<usize>,
     pub duel_remaining: f32,
-    pub training: f32,
+    pub sitting: bool,
     #[serde(skip)]
     pub token: String,
     #[serde(skip)]
@@ -47,10 +47,9 @@ pub struct Opponent {
     pub title: &'static str,
     pub pos: V,
     pub power: u64,
-    pub wins: u64,
-    pub rubles: u64,
+    pub exp: u64,
+    pub reward_pos: V,
     pub species: &'static str,
-    pub drop: Option<usize>,
 }
 #[derive(Serialize)]
 pub struct Event {
@@ -75,66 +74,31 @@ impl Game {
             profile.sanitize();
         }
         let definitions = [
-            ("Blind dog", "Mutant", -202., 153., 20, 1, 15, "dog", None),
-            (
-                "Bandit",
-                "Rookie raider",
-                -194.,
-                157.,
-                100,
-                3,
-                50,
-                "bandit",
-                Some(1),
-            ),
-            (
-                "Bloodsucker",
-                "Mutant",
-                -210.,
-                162.,
-                500,
-                8,
-                180,
-                "bloodsucker",
-                Some(6),
-            ),
-            (
-                "Mercenary",
-                "Professional killer",
-                -226.,
-                155.,
-                2500,
-                20,
-                600,
-                "mercenary",
-                Some(3),
-            ),
+            ("Blind dog", "Mutant", -202., 153., 20, 1, "dog"),
+            ("Bandit", "Raider", -194., 157., 100, 5, "bandit"),
+            ("Bloodsucker", "Mutant", -210., 162., 500, 25, "bloodsucker"),
+            ("Mercenary", "Killer", -226., 155., 2500, 100, "mercenary"),
             (
                 "Controller",
                 "Mutant",
                 -231.,
                 143.,
                 12000,
-                50,
-                2000,
+                500,
                 "controller",
-                Some(4),
             ),
         ];
         let opponents = definitions
             .into_iter()
-            .map(
-                |(name, title, x, z, power, wins, rubles, species, drop)| Opponent {
-                    name,
-                    title,
-                    pos: [x, world.floor(x, z, -15.).unwrap_or(-20.), z],
-                    power,
-                    wins,
-                    rubles,
-                    species,
-                    drop,
-                },
-            )
+            .map(|(name, title, x, z, power, exp, species)| Opponent {
+                name,
+                title,
+                pos: [x, world.floor(x, z, -15.).unwrap_or(-20.), z],
+                power,
+                exp,
+                reward_pos: [x + 2., world.floor(x + 2., z, -15.).unwrap_or(-20.), z],
+                species,
+            })
             .collect();
         Self {
             world,
@@ -166,7 +130,7 @@ impl Game {
                 yaw: 0.,
                 duel: None,
                 duel_remaining: 0.,
-                training: 0.,
+                sitting: false,
                 input: Input::default(),
                 last_input: self.time,
                 next_train: 0.,
@@ -209,60 +173,93 @@ impl Game {
                 p.profile.sanitize();
                 None
             }
-            "train" if p.duel.is_none() && self.time >= p.next_train => {
-                p.next_train = self.time + 0.19;
-                p.training = 0.24;
-                p.profile.train();
-                None
+            "sit" if p.duel.is_none() && p.vertical_velocity == 0. => {
+                if dist(
+                    p.pos,
+                    [
+                        -207.,
+                        self.world.floor(-207., 148., -15.).unwrap_or(-20.),
+                        148.,
+                    ],
+                ) > 3.5
+                {
+                    Some("Walk to the campfire to sit.".into())
+                } else {
+                    p.sitting = !p.sitting;
+                    p.next_train = self.time + 1.;
+                    p.input = Input::default();
+                    None
+                }
             }
-            "buy" | "equip" if p.duel.is_none() => {
-                let n = v["item"]
-                    .as_u64()
-                    .and_then(|n| usize::try_from(n).ok())
-                    .unwrap_or(usize::MAX);
-                Some(
-                    match if kind == "buy" {
-                        p.profile.buy(n)
-                    } else {
-                        p.profile.equip(n)
-                    } {
-                        Ok(()) => format!("Equipped {}", ITEMS[n].name),
-                        Err(e) => e.into(),
-                    },
-                )
+            "equip" if p.duel.is_none() => {
+                let n = v["item"].as_u64().unwrap_or(u64::MAX) as usize;
+                Some(match p.profile.equip(n) {
+                    Ok(()) => format!("Equipped {}", ITEMS[n].name),
+                    Err(e) => e.into(),
+                })
             }
-            "promote" if p.duel.is_none() => Some(match p.profile.promote() {
-                Ok(()) => format!(
-                    "Promoted to {}! Training multiplier ×{}",
-                    RANKS[p.profile.rank],
-                    1_u64 << p.profile.rank
-                ),
+            "open_box" if p.duel.is_none() => Some(match p.profile.open_box(random_roll()) {
+                Ok(n) => format!("Lootbox: {n}"),
                 Err(e) => e.into(),
             }),
+            "claim_exp" if p.duel.is_none() && p.vertical_velocity == 0. => {
+                if let Some(n) = v["stage"]
+                    .as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .filter(|&n| n < self.opponents.len())
+                {
+                    let o = &self.opponents[n];
+                    let marker = o.reward_pos;
+                    if !p.profile.unlocked(n) {
+                        Some("Defeat the previous enemy first.".into())
+                    } else if dist(p.pos, marker) > 2.5 {
+                        Some("Walk to the EXP marker beside this enemy.".into())
+                    } else {
+                        p.profile.exp = p.profile.exp.saturating_add(o.exp);
+                        p.pos = [
+                            -205.,
+                            self.world.floor(-205., 150., -15.).unwrap_or(-20.),
+                            150.,
+                        ];
+                        p.input = Input::default();
+                        p.sitting = false;
+                        Some(format!("+{} EXP · Returned to camp", o.exp))
+                    }
+                } else {
+                    None
+                }
+            }
             "home" if p.duel.is_none() => {
                 p.pos = [
                     -205.,
                     self.world.floor(-205., 150., -15.).unwrap_or(-20.),
                     150.,
                 ];
+                p.sitting = false;
                 p.input = Input::default();
                 p.vertical_velocity = 0.;
                 p.jump_held = false;
                 Some("Returned to camp.".into())
             }
             "challenge" if p.duel.is_none() && p.vertical_velocity == 0. => {
-                if let Some(n) = v["opponent"]
-                    .as_u64()
-                    .and_then(|n| usize::try_from(n).ok())
-                    .filter(|&n| n < self.opponents.len())
+                if let Some(n) = self
+                    .opponents
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, o)| dist(p.pos, o.pos) <= 4.5)
+                    .min_by(|(_, a), (_, b)| dist(p.pos, a.pos).total_cmp(&dist(p.pos, b.pos)))
+                    .map(|(n, _)| n)
                 {
                     let opponent = &self.opponents[n];
-                    if dist(p.pos, opponent.pos) > 6. {
+                    if !p.profile.unlocked(n) {
+                        Some("Defeat the previous stage first.".into())
+                    } else if dist(p.pos, opponent.pos) > 4.5 {
                         Some(format!(
                             "Walk closer to {} to challenge them.",
                             opponent.name
                         ))
                     } else {
+                        p.sitting = false;
                         p.duel = Some(n);
                         p.duel_remaining = 3.;
                         Some(format!("Fighting {}…", opponent.name))
@@ -290,8 +287,8 @@ impl Game {
     pub fn tick(&mut self) {
         self.time += 0.05;
         let mut finished = vec![];
+        let mut trained = vec![];
         for (&id, p) in &mut self.players {
-            p.training = (p.training - 0.05).max(0.);
             if self.time - p.last_input > 0.3 {
                 p.input = Input::default();
             }
@@ -300,33 +297,39 @@ impl Game {
                 if p.duel_remaining == 0. {
                     let o = &self.opponents[n];
                     let won = p.profile.strength() >= o.power;
-                    let loot = if won {
-                        p.profile.reward(n, o.wins, o.rubles, o.drop)
-                    } else {
-                        None
-                    };
+                    let drop = won && p.profile.victory(n, random_roll() % 100);
                     finished.push((
                         id,
                         won,
                         if won {
                             format!(
-                                "Defeated {} · +{} wins · +{} rubles{}",
+                                "Defeated {}{}",
                                 o.name,
-                                o.wins,
-                                o.rubles,
-                                loot.map(|item| format!(" · Loot: {item}"))
-                                    .unwrap_or_default()
+                                if drop {
+                                    " · Lootbox found! Open your inventory."
+                                } else {
+                                    ""
+                                }
                             )
                         } else {
-                            format!(
-                                "{} won. Reach {} combat strength and try again.",
-                                o.name, o.power
-                            )
+                            format!("{} won. Train at the campfire for more power.", o.name)
                         },
                     ));
                     p.duel = None;
                 }
                 continue;
+            }
+            if p.sitting {
+                if p.input.forward != 0. || p.input.right != 0. || p.input.jump {
+                    p.sitting = false;
+                } else {
+                    if self.time >= p.next_train {
+                        p.profile.train();
+                        p.next_train = self.time + 1.;
+                        trained.push(id);
+                    }
+                    continue;
+                }
             }
             p.yaw = p.input.yaw;
             let f = p.input.forward;
@@ -346,12 +349,82 @@ impl Game {
                 self.world.move_player(p.pos, dx, dz)
             };
         }
+        for id in trained {
+            self.remember(id);
+        }
         for (id, won, text) in finished {
             self.remember(id);
             self.event(id, if won { "win" } else { "loss" }, text);
         }
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"ranks":RANKS,"promotions":PROMOTIONS})
+        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"campfire":[-207.,self.world.floor(-207.,148.,-15.).unwrap_or(-20.),148.]})
+    }
+}
+
+fn random_roll() -> u32 {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish() as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    #[ignore = "requires imported Cordon assets"]
+    fn cordon_stage_progression() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let world = World::load(&std::path::Path::new(&root).join("collision.cform")).unwrap();
+        let mut g = Game::new(world, BTreeMap::new());
+        g.join(1, "test".into());
+        let cmd = |kind: &str| serde_json::json!({"kind":kind});
+        g.command(1, cmd("train"));
+        assert_eq!(g.players[&1].profile.power, 0);
+        g.command(1, cmd("sit"));
+        assert!(g.players[&1].sitting);
+        for _ in 0..22 {
+            g.tick();
+        }
+        assert_eq!(g.players[&1].profile.power, 1);
+        assert_eq!(g.profiles["test"].power, 1, "passive gains must be saved");
+        g.command(1, serde_json::json!({"kind":"input","forward":1}));
+        g.tick();
+        assert!(!g.players[&1].sitting);
+        g.players.get_mut(&1).unwrap().pos = g.opponents[1].reward_pos;
+        g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
+        assert_eq!(g.players[&1].profile.exp, 0);
+        {
+            let p = g.players.get_mut(&1).unwrap();
+            p.pos = g.opponents[0].pos;
+            p.profile.power = 20;
+            p.input = Input::default();
+        }
+        g.command(1, cmd("challenge"));
+        assert_eq!(g.players[&1].duel, Some(0));
+        for _ in 0..62 {
+            g.tick();
+        }
+        assert!(g.players[&1].profile.unlocked(1));
+        g.players.get_mut(&1).unwrap().pos = g.opponents[1].reward_pos;
+        g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
+        assert_eq!(g.players[&1].profile.exp, 5);
+        assert_eq!(g.players[&1].pos[0], -205.);
+        g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
+        assert_eq!(
+            g.players[&1].profile.exp, 5,
+            "remote repeat claims rejected"
+        );
+        assert_eq!(
+            g.players[&1].profile.gain(),
+            1,
+            "EXP is a score, not a training bonus"
+        );
+        g.leave(1);
+        g.join(2, "test".into());
+        assert_eq!(g.players[&2].profile.exp, 5);
+        assert!(g.players[&2].profile.unlocked(1));
     }
 }
