@@ -111,6 +111,9 @@ impl Game {
             dirty: false,
         }
     }
+    fn campfire(&self) -> V {
+        [-206.817, -19.97, 140.435]
+    }
     pub fn join(&mut self, id: u64, token: String) -> bool {
         if self.players.len() >= 12 || self.players.values().any(|p| p.token == token) {
             return false;
@@ -163,6 +166,7 @@ impl Game {
         }
     }
     pub fn command(&mut self, id: u64, v: serde_json::Value) {
+        let campfire = self.campfire();
         let Some(p) = self.players.get_mut(&id) else {
             return;
         };
@@ -174,15 +178,7 @@ impl Game {
                 None
             }
             "sit" if p.duel.is_none() && p.vertical_velocity == 0. => {
-                if dist(
-                    p.pos,
-                    [
-                        -207.,
-                        self.world.floor(-207., 148., -15.).unwrap_or(-20.),
-                        148.,
-                    ],
-                ) > 3.5
-                {
+                if dist(p.pos, campfire) > 3.5 {
                     Some("Walk to the campfire to sit.".into())
                 } else {
                     p.sitting = !p.sitting;
@@ -358,7 +354,7 @@ impl Game {
         }
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"campfire":[-207.,self.world.floor(-207.,148.,-15.).unwrap_or(-20.),148.]})
+        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"campfire":self.campfire()})
     }
 }
 
@@ -383,6 +379,7 @@ mod tests {
         let cmd = |kind: &str| serde_json::json!({"kind":kind});
         g.command(1, cmd("train"));
         assert_eq!(g.players[&1].profile.power, 0);
+        g.players.get_mut(&1).unwrap().pos = [-206.817, -20., 142.435];
         g.command(1, cmd("sit"));
         assert!(g.players[&1].sitting);
         for _ in 0..22 {

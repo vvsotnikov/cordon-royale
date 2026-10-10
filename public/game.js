@@ -90,8 +90,8 @@ function stageUI(me){
 }
 function makeCamp(){
  campVisual=new THREE.Group();campVisual.position.fromArray(state.campfire);scene.add(campVisual);
- for(let n=0;n<4;n++){const log=new THREE.Mesh(new THREE.CylinderGeometry(.12,.16,1.4,8),new THREE.MeshStandardMaterial({color:0x483321}));log.rotation.z=Math.PI/2;log.rotation.y=n*Math.PI/4;log.position.y=.15;campVisual.add(log);}
- const flame=new THREE.Mesh(new THREE.ConeGeometry(.35,.9,7),new THREE.MeshBasicMaterial({color:0xff9933,transparent:true,opacity:.8}));flame.position.y=.55;campVisual.add(flame);const light=new THREE.PointLight(0xff9933,5,8);light.position.y=1;campVisual.add(light);const tag=label('CAMPFIRE · F TO SIT');tag.scale.set(1.8,.34,1);tag.position.y=1.2;campVisual.add(tag);
+ // The fire pit and charred wood are already part of the imported level.
+ const light=new THREE.PointLight(0xff9933,3,6);light.position.y=.6;campVisual.add(light);const tag=label('CAMPFIRE · F TO SIT');tag.scale.set(1.8,.34,1);tag.position.y=1.2;campVisual.add(tag);
 }
 function frame(now){
  requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,.05);last=now;
