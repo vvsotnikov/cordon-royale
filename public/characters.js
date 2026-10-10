@@ -22,10 +22,10 @@ export async function loadCharacters(resources,texture){
   template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?model:bones[parent]).add(bones[i]);});
   root.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);
   for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);model.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
-  // Neutral and bandit/mercenary OGF skeletons have opposite bind headings.
+  // Imported OGF skeletons do not all share the same bind heading.
   // Normalize each to the gameplay convention: forward is -Z.
   // Rotate the visual after binding, leaving gameplay heading and labels unchanged.
-  model.rotation.y=['bandit','mercenary'].includes(name)?0:Math.PI;
+  model.rotation.y=['bandit','mercenary','dog','controller'].includes(name)?0:Math.PI;
   root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
   return root;
  };
