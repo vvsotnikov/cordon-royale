@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from './vendor/three.module.js';
 // OGF bind rotations use X-Ray's setXYZi convention, followed by a Z reflection.
 function bindMatrix(b){
  const [x,y,z]=b.rotation,h=-y,p=-x,t=-z,sh=Math.sin(h),ch=Math.cos(h),sp=Math.sin(p),cp=Math.cos(p),sb=Math.sin(t),cb=Math.cos(t);
@@ -22,9 +22,10 @@ export async function loadCharacters(resources,texture){
   template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?model:bones[parent]).add(bones[i]);});
   root.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);
   for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);model.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
-  // Imported models face +Z; movement and camera heading use -Z.
+  // Neutral and bandit/mercenary OGF skeletons have opposite bind headings.
+  // Normalize each to the gameplay convention: forward is -Z.
   // Rotate the visual after binding, leaving gameplay heading and labels unchanged.
-  model.rotation.y=Math.PI;
+  model.rotation.y=['bandit','mercenary'].includes(name)?0:Math.PI;
   root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
   return root;
  };
