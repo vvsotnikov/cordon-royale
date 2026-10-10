@@ -17,10 +17,14 @@ export async function loadCharacters(resources,texture){
   templates[name]={bones:model.bones,parts};
  }
  return name=>{
-  const template=templates[name],root=new THREE.Group(),bones=template.bones.map(b=>{const bone=new THREE.Bone();bone.name=b.name;bindMatrix(b).decompose(bone.position,bone.quaternion,bone.scale);return bone;});
-  template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?root:bones[parent]).add(bones[i]);});
+  const template=templates[name],root=new THREE.Group(),model=new THREE.Group(),bones=template.bones.map(b=>{const bone=new THREE.Bone();bone.name=b.name;bindMatrix(b).decompose(bone.position,bone.quaternion,bone.scale);return bone;});
+  root.add(model);
+  template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?model:bones[parent]).add(bones[i]);});
   root.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);
-  for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);root.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
+  for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);model.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
+  // Imported models face +Z; movement and camera heading use -Z.
+  // Rotate the visual after binding, leaving gameplay heading and labels unchanged.
+  model.rotation.y=Math.PI;
   root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
   return root;
  };
