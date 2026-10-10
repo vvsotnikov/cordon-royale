@@ -119,6 +119,42 @@ impl World {
     pub fn floor(&self, x: f32, z: f32, top: f32) -> Option<f32> {
         self.ray([x, top, z], [0., -1., 0.], 120.).map(|t| top - t)
     }
+    pub fn jump_move(&self, pos: V, dx: f32, dz: f32, velocity: &mut f32) -> V {
+        let mut p = pos;
+        let steps = (dx.abs().max(dz.abs()) / 0.1).ceil().max(1.) as usize;
+        for delta in
+            (0..steps).flat_map(|_| [[dx / steps as f32, 0., 0.], [0., 0., dz / steps as f32]])
+        {
+            let len = dist(delta, [0.; 3]);
+            if len > 0.0001
+                && ![0.05, 0.55, 1.1, 1.7].iter().any(|h| {
+                    self.ray(add(p, [0., *h, 0.]), mul(delta, 1. / len), len)
+                        .is_some()
+                })
+            {
+                p = add(p, delta);
+            }
+        }
+        let dy = *velocity * 0.05;
+        *velocity -= 18. * 0.05;
+        if dy > 0. {
+            if let Some(hit) = self.ray(add(p, [0., 1.7, 0.]), [0., 1., 0.], dy + 0.02) {
+                p[1] += (hit - 0.02).max(0.);
+                *velocity = -0.01;
+            } else {
+                p[1] += dy;
+            }
+        } else if let Some(y) = self
+            .floor(p[0], p[2], p[1] + 0.02)
+            .filter(|y| *y >= p[1] + dy)
+        {
+            p[1] = y;
+            *velocity = 0.;
+        } else {
+            p[1] += dy;
+        }
+        p
+    }
     pub fn move_player(&self, pos: V, dx: f32, dz: f32) -> V {
         let mut p = pos;
         let steps = (dx.abs().max(dz.abs()) / 0.1).ceil().max(1.) as usize;
@@ -208,6 +244,27 @@ mod tests {
         World {
             triangles,
             grid: HashMap::from([((0, 0), ids)]),
+        }
+    }
+    #[test]
+    fn jump_lands_and_stops_at_ceiling() {
+        for ceiling in [false, true] {
+            let w = staircase(ceiling, false);
+            let mut p = [1., 0., 0.05];
+            let mut velocity = 7.;
+            let mut peak = 0_f32;
+            for _ in 0..50 {
+                if velocity != 0. {
+                    p = w.jump_move(p, 0., 0., &mut velocity);
+                }
+                peak = peak.max(p[1]);
+            }
+            assert!(p[1].abs() < 0.001 && velocity == 0., "did not land: {p:?}");
+            if ceiling {
+                assert!(peak <= 0.2);
+            } else {
+                assert!(peak > 1.);
+            }
         }
     }
     #[test]

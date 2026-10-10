@@ -8,6 +8,7 @@ pub struct Input {
     pub right: f32,
     pub yaw: f32,
     pub sprint: bool,
+    pub jump: bool,
 }
 impl Input {
     pub fn valid(&self) -> bool {
@@ -35,6 +36,10 @@ pub struct Player {
     pub last_input: f64,
     #[serde(skip)]
     pub next_train: f64,
+    #[serde(skip)]
+    pub vertical_velocity: f32,
+    #[serde(skip)]
+    pub jump_held: bool,
 }
 #[derive(Serialize)]
 pub struct Opponent {
@@ -165,6 +170,8 @@ impl Game {
                 input: Input::default(),
                 last_input: self.time,
                 next_train: 0.,
+                vertical_velocity: 0.,
+                jump_held: false,
             },
         );
         true
@@ -239,9 +246,11 @@ impl Game {
                     150.,
                 ];
                 p.input = Input::default();
+                p.vertical_velocity = 0.;
+                p.jump_held = false;
                 Some("Returned to camp.".into())
             }
-            "challenge" if p.duel.is_none() => {
+            "challenge" if p.duel.is_none() && p.vertical_velocity == 0. => {
                 if let Some(n) = v["opponent"]
                     .as_u64()
                     .and_then(|n| usize::try_from(n).ok())
@@ -324,11 +333,18 @@ impl Game {
             let r = p.input.right;
             let scale =
                 if p.input.sprint { 7.4 } else { 4.8 } * 0.05 / (f * f + r * r).sqrt().max(1.);
-            p.pos = self.world.move_player(
-                p.pos,
-                (-p.yaw.sin() * f + p.yaw.cos() * r) * scale,
-                (-p.yaw.cos() * f - p.yaw.sin() * r) * scale,
-            );
+            if p.input.jump && !p.jump_held && p.vertical_velocity == 0. {
+                p.vertical_velocity = 7.;
+            }
+            p.jump_held = p.input.jump;
+            let dx = (-p.yaw.sin() * f + p.yaw.cos() * r) * scale;
+            let dz = (-p.yaw.cos() * f - p.yaw.sin() * r) * scale;
+            p.pos = if p.vertical_velocity != 0. {
+                self.world
+                    .jump_move(p.pos, dx, dz, &mut p.vertical_velocity)
+            } else {
+                self.world.move_player(p.pos, dx, dz)
+            };
         }
         for (id, won, text) in finished {
             self.remember(id);

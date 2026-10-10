@@ -10,6 +10,12 @@ async function client(key){return new Promise((resolve,reject)=>{
 })}
 const a=await client(token),b=await client(randomBytes(32).toString('hex'));
 try{
+ const origin=a.state.players.find(p=>p.id===a.id).pos[1];
+ let peak=origin;const jumping=setInterval(()=>{a.send({kind:'input',jump:true});peak=Math.max(peak,a.state.players.find(p=>p.id===a.id).pos[1]);},50);
+ await sleep(1600);clearInterval(jumping);assert(peak>origin+1,'jump must rise');
+ assert(Math.abs(a.state.players.find(p=>p.id===a.id).pos[1]-origin)<.05,'held jump must land without bouncing');
+ a.send({kind:'input',jump:false});await sleep(100);a.send({kind:'input',jump:true});await sleep(150);assert(a.state.players.find(p=>p.id===a.id).pos[1]>origin+.4,'release rearms jump');
+ a.send({kind:'home'});await sleep(100);
  await sleep(100);assert(a.state.players.some(p=>p.id===b.id));
  await assert.rejects(client(token),/already connected/);
  a.send({kind:'name',name:'<script>Test'});a.send({kind:'equip',item:4});await sleep(100);assert.equal(a.profile.weapon,0);assert(!a.profile.name.includes('<'));

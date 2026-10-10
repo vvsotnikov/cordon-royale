@@ -24,7 +24,7 @@ cargo run --release
 
 Open http://localhost:8787 or the host's LAN address. All clients of one server
 share the same room. WASD moves, Shift sprints, right-drag or arrow keys orbit the
-camera, Space practices, E challenges the selected nearby enemy, I opens inventory,
+camera, Space jumps, E challenges the selected nearby enemy, I opens inventory,
 and B returns to camp. The Auto button repeats practice. Desktop keyboard/mouse required.
 
 Profiles save every two seconds to `D:/GameAssets/cordon-royale/profiles.json`;
@@ -42,10 +42,13 @@ GAMMA texture overrides in MO2 priority order. Packed mod archives and modified
 level geometry are not overlaid. It does not change either game installation.
 Anomaly/GAMMA resources retain their original rights; the repository MIT license
 applies only to our code. Three.js has its license in `public/vendor/THREE-LICENSE.txt`.
-Characters, enemies and weapons currently use original procedural proxy models;
-X-Ray AI, animation, quests, terrain blending and atmosphere shaders are not emulated.
+Stalkers, bandits, mercenaries, dogs, bloodsuckers and controllers use imported Anomaly
+meshes, textures and skeletons, with simple procedural poses rather than original
+animation clips. Equipment affects stats but does not yet swap the held weapon or
+outfit model. Terrain combines its color map with the ground mask and repeating
+grass, asphalt, earth and pebble textures. X-Ray AI and atmosphere shaders are not emulated.
 
-Map and texture chunks are cached in IndexedDB, including on plain HTTP LAN origins.
+Map, character models, and texture chunks are cached in IndexedDB, including on plain HTTP LAN origins.
 Each load checks a small manifest and reuses unchanged chunks. Storage failures fall
 back to downloads. The browser can evict cache data; scene creation still happens on
 reload. After manually changing imported files, regenerate content-addressed chunks:

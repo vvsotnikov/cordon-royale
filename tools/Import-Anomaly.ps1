@@ -12,11 +12,17 @@ New-Item -ItemType Directory $base,$web -Force | Out-Null
 if($LASTEXITCODE){throw 'Cordon extraction failed'}
 & node "$PSScriptRoot/import-level.mjs" "$base/levels/l01_escape" $web
 if($LASTEXITCODE){throw 'Geometry conversion failed'}
-# Extract environment textures only. Never copy source archives into the repository.
+# Extract environment textures. Never copy source archives into the repository.
 Get-ChildItem "$Anomaly/db/textures" -File | Where-Object {$_.Name -notmatch 'actors|weapons|ui|sky'} | ForEach-Object {
     & "$Anomaly/tools/converter.exe" -unpack -xdb $_.FullName -dir $base
     if($LASTEXITCODE){throw "Texture extraction failed: $($_.Name)"}
 }
+foreach($archive in @('meshes/meshes.db0','meshes/meshes_actors.db0','textures/textures_actors.db0','textures/textures_actors.db1')){
+    & "$Anomaly/tools/converter.exe" -unpack -xdb "$Anomaly/db/$archive" -dir $base
+    if($LASTEXITCODE){throw "Character extraction failed: $archive"}
+}
+& node "$PSScriptRoot/import-characters.mjs" $base $web
+if($LASTEXITCODE){throw 'Character conversion failed'}
 $sources=@("$base/textures","$Anomaly/gamedata/textures")
 # MO2 modlist is highest priority first; reverse it so later copies win.
 if(Test-Path "$Gamma/profiles/$Profile/modlist.txt"){

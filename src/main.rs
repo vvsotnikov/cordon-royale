@@ -21,6 +21,29 @@ use std::{
 };
 use tokio::sync::{broadcast, Mutex};
 use tower_http::services::ServeDir;
+async fn cache_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let immutable = request
+        .uri()
+        .path()
+        .strip_prefix("/assets/cache/")
+        .and_then(|s| s.strip_suffix(".bin"))
+        .is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()));
+    let mut response = next.run(request).await;
+    if response.status().is_success() {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static(if immutable {
+                "public, max-age=31536000, immutable"
+            } else {
+                "no-cache"
+            }),
+        );
+    }
+    response
+}
 #[derive(Clone)]
 struct App {
     game: Arc<Mutex<game::Game>>,
@@ -148,6 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(|| async { "ok" }))
         .nest_service("/assets", ServeDir::new(assets))
         .fallback_service(ServeDir::new("public"))
+        .layer(axum::middleware::from_fn(cache_headers))
         .with_state(app);
     let address = std::env::var("BIND").unwrap_or("127.0.0.1:8787".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;

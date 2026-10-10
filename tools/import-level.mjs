@@ -27,7 +27,7 @@ for(const visual of chunks(level.get(3)).values()){
  for(let n=0;n<vn;n++){let a=(vbase+n)*v.stride,x=v.data.readFloatLE(a),y=v.data.readFloatLE(a+4),z=v.data.readFloatLE(a+8);
   if(mat){const px=x,py=y,pz=z;x=px*mat[0]+py*mat[4]+pz*mat[8]+mat[12];y=px*mat[1]+py*mat[5]+pz*mat[9]+mat[13];z=px*mat[2]+py*mat[6]+pz*mat[10]+mat[14];}
   vertices.writeFloatLE(x,n*20);vertices.writeFloatLE(y,n*20+4);vertices.writeFloatLE(-z,n*20+8);
-  let u=0,t=0;if(uv){if(uv.type===1||uv.type===3){u=v.data.readFloatLE(a+uv.offset);t=v.data.readFloatLE(a+uv.offset+4);}else{u=v.data.readInt16LE(a+uv.offset)/1024;t=v.data.readInt16LE(a+uv.offset+2)/1024;if(mat){u/=2;t/=2;}}}
+  let u=0,t=0;if(uv){if(uv.type===1||uv.type===3){u=v.data.readFloatLE(a+uv.offset);t=v.data.readFloatLE(a+uv.offset+4);}else{u=v.data.readInt16LE(a+uv.offset)/1024;t=v.data.readInt16LE(a+uv.offset+2)/1024;if(mat){u/=2;t/=2;}else{const tangent=v.decl.find(d=>d.usage===6),binormal=v.decl.find(d=>d.usage===7);if(tangent)u+=v.data[a+tangent.offset+3]/255/1024;if(binormal)t+=v.data[a+binormal.offset+3]/255/1024;}}}
   vertices.writeFloatLE(u,n*20+12);vertices.writeFloatLE(t,n*20+16);
  }
  for(let n=0;n<count;n+=3){const a=i.readUInt16LE((ibase+n)*2),b=i.readUInt16LE((ibase+n+1)*2),d=i.readUInt16LE((ibase+n+2)*2);if(Math.max(a,b,d)>=vn)throw Error('Invalid visual index');indices.writeUInt16LE(a,n*2);indices.writeUInt16LE(d,n*2+2);indices.writeUInt16LE(b,n*2+4);}

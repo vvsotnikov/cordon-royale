@@ -8,6 +8,7 @@ if(root===repo||root.startsWith(repo+path.sep))throw Error('Resource output must
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const world=JSON.parse(await fs.readFile(path.join(root,'world.json'),'utf8'));
 const names=['world.json','world.bin',...new Set(world.meshes.map(m=>'textures/'+m.texture+'.dds'))];
+names.push('characters.json',...JSON.parse(await fs.readFile(path.join(root,'extra-textures.json'),'utf8')).map(n=>'textures/'+n+'.dds'));
 const resources={};
 await fs.mkdir(path.join(root,'cache'),{recursive:true});
 for(const name of names){
