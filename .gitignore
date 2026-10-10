@@ -1,0 +1,11 @@
+/target/
+*.log
+.env
+/artifacts/
+/assets/
+/gamedata/
+*.dds
+*.db*
+*.cform
+*.geom*
+/public/map.json
