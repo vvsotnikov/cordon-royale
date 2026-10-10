@@ -121,21 +121,33 @@ impl World {
     }
     pub fn move_player(&self, pos: V, dx: f32, dz: f32) -> V {
         let mut p = pos;
-        for delta in [[dx, 0., 0.], [0., 0., dz]] {
+        let steps = (dx.abs().max(dz.abs()) / 0.1).ceil().max(1.) as usize;
+        for delta in
+            (0..steps).flat_map(|_| [[dx / steps as f32, 0., 0.], [0., 0., dz / steps as f32]])
+        {
             let len = dist(delta, [0.; 3]);
             if len < 0.0001 {
                 continue;
             }
             let d = mul(delta, 1. / len);
-            let blocked = [0.55, 1.4]
-                .iter()
-                .any(|h| self.ray(add(p, [0., *h, 0.]), d, len + 0.38).is_some());
-            if blocked {
-                continue;
-            }
             let q = add(p, delta);
             if let Some(y) = self.floor(q[0], q[2], p[1] + 0.55) {
-                if (y - p[1]).abs() < 1.8 {
+                let rise = y - p[1];
+                if !(-1.8..=0.5).contains(&rise) {
+                    continue;
+                }
+                // Check the body after stepping onto the destination tread. A
+                // knee ray extended by the player radius hits the *next* riser
+                // on narrow stairs and prevents reaching the current tread.
+                let feet = p[1].max(y);
+                let blocked = [0.55, 1.7]
+                    .iter()
+                    .any(|h| self.ray([p[0], feet + h, p[2]], d, len).is_some());
+                let ceiling = rise > 0.
+                    && self
+                        .ray(add(p, [0., 1.7, 0.]), [0., 1., 0.], rise + 0.02)
+                        .is_some();
+                if !blocked && !ceiling {
                     p = [q[0], y, q[2]];
                 }
             }
@@ -172,6 +184,81 @@ pub fn ray_triangle(o: V, d: V, t: [V; 3]) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn staircase(ceiling: bool, wall: bool) -> World {
+        let mut triangles = Vec::new();
+        let mut quad = |a, b, c, d| {
+            triangles.push([a, b, c]);
+            triangles.push([a, c, d]);
+        };
+        for i in 0..12 {
+            let z = i as f32 * 0.2;
+            let y = i as f32 * 0.3;
+            quad([0., y, z], [2., y, z], [2., y, z + 0.2], [0., y, z + 0.2]);
+            if i > 0 {
+                quad([0., y - 0.3, z], [2., y - 0.3, z], [2., y, z], [0., y, z]);
+            }
+        }
+        if ceiling {
+            quad([0., 1.9, 0.], [2., 1.9, 0.], [2., 1.9, 2.4], [0., 1.9, 2.4]);
+        }
+        if wall {
+            quad([0., 0., 0.6], [2., 0., 0.6], [2., 5., 0.6], [0., 5., 0.6]);
+        }
+        let ids = (0..triangles.len()).collect();
+        World {
+            triangles,
+            grid: HashMap::from([((0, 0), ids)]),
+        }
+    }
+    #[test]
+    fn climbs_and_descends_narrow_stairs_at_walk_and_sprint_speed() {
+        let w = staircase(false, false);
+        for stride in [0.24, 0.37] {
+            let mut p = [1., 0., 0.05];
+            for _ in 0..8 {
+                p = w.move_player(p, 0., stride);
+            }
+            assert!(p[2] > 1.8 && p[1] > 2.5, "stuck ascending: {p:?}");
+            for _ in 0..8 {
+                p = w.move_player(p, 0., -stride);
+            }
+            assert!(p[2] < 0.2 && p[1].abs() < 0.01, "stuck descending: {p:?}");
+        }
+    }
+    #[test]
+    fn stairs_do_not_bypass_walls_or_head_clearance() {
+        for w in [staircase(true, false), staircase(false, true)] {
+            let mut p = [1., 0., 0.05];
+            for _ in 0..20 {
+                p = w.move_player(p, 0., 0.37);
+            }
+            assert!(p[2] < 0.6, "walked through an obstruction: {p:?}");
+        }
+    }
+    #[test]
+    #[ignore = "requires local imported Cordon assets"]
+    fn cordon_stairs() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let w = World::load(&Path::new(&root).join("collision.cform")).unwrap();
+        for stride in [0.24, 0.37] {
+            let mut actor = [-202.201, -22.418163, 130.18452];
+            for _ in 0..(3.6_f32 / stride).ceil() as usize {
+                actor = w.move_player(actor, 0., stride);
+            }
+            assert!(
+                actor[2] > 133.5 && actor[1] > -19.8,
+                "stuck ascending Cordon basement stairs: {actor:?}"
+            );
+            for _ in 0..(3.6_f32 / stride).ceil() as usize {
+                actor = w.move_player(actor, 0., -stride);
+            }
+            assert!(
+                actor[2] < 130.3 && actor[1] < -22.,
+                "stuck descending Cordon basement stairs: {actor:?}"
+            );
+        }
+    }
     #[test]
     fn ray_hits_both_sides_and_rejects_misses() {
         let t = [[0., 0., 0.], [2., 0., 0.], [0., 0., 2.]];

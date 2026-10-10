@@ -58,6 +58,7 @@ competitive anticheat or production denial-of-service protection.
 ```powershell
 cargo fmt --check
 cargo test
+cargo test cordon_stairs -- --ignored # requires imported local Cordon assets
 node --check public/game.js
 node tests/room.mjs # with a fresh server running on localhost:8787
 ```
