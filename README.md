@@ -39,7 +39,8 @@ two seconds of progress. Never publish profile files or imported resources.
 
 The importer extracts Cordon and environment textures, then applies enabled loose
 GAMMA texture overrides in MO2 priority order. Packed mod archives and modified
-level geometry are not overlaid. It does not change either game installation.
+level geometry are not overlaid. Collision honors the selected gamemtl.xr passable
+flags: bushes are traversable; solid trunks, walls and ground remain collidable. It does not change either game installation.
 Anomaly/GAMMA resources retain their original rights; the repository MIT license
 applies only to our code. Three.js has its license in `public/vendor/THREE-LICENSE.txt`.
 Stalkers, bandits, mercenaries, dogs, bloodsuckers and controllers use imported Anomaly
@@ -65,10 +66,11 @@ captures belong outside the repository.
 ```powershell
 cargo fmt --check
 cargo test
-cargo test cordon_stairs -- --ignored # requires imported Cordon assets
+cargo test cordon_ -- --ignored # requires imported Cordon assets
 node --check public/game.js
 node tests/resource-cache.mjs
 node tests/follow-camera.mjs
+node tests/collision-materials.mjs
 # Run a separate server with BIND=127.0.0.1:8788 and a temporary CORDON_SAVES path:
 node tests/room.mjs
 ```

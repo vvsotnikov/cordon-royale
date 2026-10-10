@@ -30,6 +30,15 @@ if(Test-Path "$Gamma/profiles/$Profile/modlist.txt"){
     [array]::Reverse($mods)
     $sources+=@($mods | ForEach-Object {Join-Path "$Gamma/mods" ($_.Substring(1)+'/gamedata/textures')})
 }
+& "$Anomaly/tools/converter.exe" -unpack -xdb "$Anomaly/db/files.db0" -dir $base
+if($LASTEXITCODE){throw 'Material library extraction failed'}
+$materialLibrary="$base/gamemtl.xr"
+foreach($root in $sources){
+    $candidate=Join-Path (Split-Path $root) 'gamemtl.xr'
+    if(Test-Path -LiteralPath $candidate){$materialLibrary=$candidate}
+}
+& node "$PSScriptRoot/import-collision.mjs" "$base/levels/l01_escape/level.cform" $materialLibrary "$web/collision.cform"
+if($LASTEXITCODE){throw 'Collision material conversion failed'}
 $missing=@();$manifest=@()
 foreach($texture in Get-Content "$web/textures-needed.txt"){
     $relative=$texture.Replace('\','/')+'.dds';$found=$null

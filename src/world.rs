@@ -294,6 +294,18 @@ mod tests {
     }
     #[test]
     #[ignore = "requires local imported Cordon assets"]
+    fn cordon_bush() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let w = World::load(&Path::new(&root).join("collision.cform")).unwrap();
+        let mut p = [-205., w.floor(-205., 149., -15.).unwrap(), 149.];
+        for _ in 0..15 {
+            p = w.move_player(p, 0., 0.24);
+        }
+        assert!(p[2] > 152., "blocked by the bush near camp: {p:?}");
+    }
+    #[test]
+    #[ignore = "requires local imported Cordon assets"]
     fn cordon_stairs() {
         let root =
             std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
