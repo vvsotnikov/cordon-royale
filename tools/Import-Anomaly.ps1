@@ -34,3 +34,5 @@ foreach($texture in Get-Content "$web/textures-needed.txt"){
 }
 @{sources=$manifest;missing=$missing;profile=$Profile} | ConvertTo-Json -Depth 5 | Set-Content "$Output/import-manifest.json"
 Write-Output "Imported $($manifest.Count) textures; $($missing.Count) unavailable. Local provenance: $Output/import-manifest.json"
+& node "$PSScriptRoot/prepare-cache.mjs" $web
+if($LASTEXITCODE){throw 'Browser cache preparation failed'}

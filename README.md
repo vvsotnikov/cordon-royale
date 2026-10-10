@@ -71,3 +71,18 @@ button and dragging; left click still fires. Chrome/Edge support normal mouse lo
 The importer currently uses base color textures without X-Ray terrain blending,
 lightmaps, grass details or atmospheric shaders, so lighting and ground appearance
 are simplified. Spawn and stash heights are tuned for southern Cordon.
+
+Map and texture chunks are cached in browser IndexedDB, including over HTTP on
+LAN. Each load checks a small manifest; unchanged chunks are reused, obsolete
+cached chunks are removed, and storage failures fall back to network loading.
+Caching is per origin: localhost and the LAN address have separate caches.
+The browser may evict stored data. Rendering still rebuilds the scene on reload.
+After changing imported files manually, regenerate their content hashes with:
+
+```powershell
+node tools/prepare-cache.mjs D:/GameAssets/cordon-royale/web
+node tests/resource-cache.mjs
+```
+
+The importer runs cache preparation automatically. Generated manifests and binary
+chunks stay beside the external resources, outside Git.
