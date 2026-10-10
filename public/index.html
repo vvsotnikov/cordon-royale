@@ -5,7 +5,7 @@
 <main id="lobby"><div class="eyebrow">THE ZONE DOESN’T FORGIVE. IT FORGES.</div><h1>ROOKIE TO<br><em>LEGEND.</em></h1><p>Rest by the fire. Build your power.<br>Clear stages, collect EXP and find rare gear.</p><div class="entry"><input id="name" maxlength="20" aria-label="Your callsign" value="Stalker"><button id="deploy" disabled>PREPARING CORDON ↗</button></div><div id="loading">Loading local Anomaly resources…</div><div class="brief"><div><strong>01</strong><span>PREPARE<br>Campfire & gear</span></div><div><strong>02</strong><span>HUNT<br>Mutants & bandits</span></div><div><strong>03</strong><span>EVOLVE<br>Collect EXP</span></div></div></main>
 <section id="hud" hidden>
  <div id="stats"><div><small>POWER</small><b id="power">0</b><span id="breakdown"></span></div><div><small>EXP</small><b id="exp">0</b></div></div>
- <aside id="roster"><div class="eyebrow">ENEMY STAGES</div><div id="opponents"></div><div class="eyebrow board-title">CAMP LEADERBOARD</div><div id="leaderboard"></div></aside>
+ <div id="nextEnemy" role="status"><svg id="enemyArrow" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 L35 23 L24 20 L24 37 L16 37 L16 20 L5 23 Z" fill="currentColor"/></svg><span id="enemyDirectionLabel"></span></div>
  <div id="stageMarkers"></div><div id="notification" role="status"></div><div id="duelPanel" hidden><b id="duelTitle"></b><div class="bar"><i id="duelBar"></i></div><small id="duelHint"></small></div>
  <div id="rankPanel"><small id="campStatus">CAMPFIRE · +1 POWER / SECOND WHILE SITTING</small></div>
  <div id="actions"><button id="sit">SIT BY FIRE [F]</button><button id="inventoryToggle" class="secondary">INVENTORY [I]</button><button id="challenge">FIGHT [E]</button><button id="home" class="secondary">CAMP [B]</button></div>

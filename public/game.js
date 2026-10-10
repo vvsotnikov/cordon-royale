@@ -72,11 +72,18 @@ function updateUI(me){
  const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} base + ${total-p.power} equipment`;$('exp').textContent=p.exp.toLocaleString();
  const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
  $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=me.sitting?'SITTING · +1 POWER / SECOND':'CAMPFIRE · SIT TO GAIN POWER';
- $('opponents').replaceChildren();state.opponents.forEach((o,n)=>{const row=document.createElement('div');row.className='threat'+(n===selected?' selected':'');row.textContent=`${n+1}. ${o.name} · ${o.power} power · ${p.trophies.includes(n)?'DEFEATED':unlocked(p,n)?'UNLOCKED':'LOCKED'}`;$('opponents').append(row);});
  $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
  $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(1-me.duel_remaining/3)*100+'%';$('duelHint').textContent=`Your power ${total} / Enemy ${o.power}`;}
- $('leaderboard').replaceChildren();[...state.players].sort((a,b)=>strength(b.profile)-strength(a.profile)).forEach(player=>{const row=document.createElement('div');row.className='score';row.textContent=`${player.profile.name}${player.id===id?' (you)':''} · ${strength(player.profile)}`;$('leaderboard').append(row);});
  $('connection').textContent=`LIVE · ${state.players.length} STALKERS · AUTOSAVE`;updateInventory(me);
+}
+function nextEnemyUI(me){
+ const n=state.opponents.findIndex((_,i)=>!me.profile.trophies.includes(i));
+ $('enemyArrow').style.display=n<0?'none':'';
+ if(n<0){$('enemyDirectionLabel').textContent='ALL STAGES DEFEATED';return;}
+ const o=state.opponents[n],actor=actors.get(id).position,dx=o.pos[0]-actor.x,dz=o.pos[2]-actor.z;
+ const right=dx*Math.cos(yaw)-dz*Math.sin(yaw),forward=-dx*Math.sin(yaw)-dz*Math.cos(yaw);
+ $('enemyArrow').style.transform=`rotate(${Math.atan2(right,forward)}rad)`;
+ $('enemyDirectionLabel').textContent=`${o.name} · ${Math.round(Math.hypot(dx,dz))}m`;
 }
 function stageUI(me){
  nearestExp=-1;let best=Infinity;
@@ -121,6 +128,7 @@ function frame(now){
   const hits=raycaster.intersectObjects(cameraMeshes,false);
   followCamera.place(camera,hits.length?hits[0].distance-.2:6,dt);
   actors.get(id).visible=followCamera.distance>.8;
+  nextEnemyUI(me);
   stageUI(me);
   if(now-lastUi>200){lastUi=now;updateUI(me);}
  }else{camera.position.set(-185+Math.sin(now*.00003)*10,4,165);camera.lookAt(-215,-17,122);}
