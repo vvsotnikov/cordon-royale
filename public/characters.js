@@ -7,7 +7,7 @@ function bindMatrix(b){
  return new THREE.Matrix4().fromArray(a);
 }
 export async function loadCharacters(resources,texture){
- const source=JSON.parse(new TextDecoder().decode(await resources.get('characters.json'))),templates={};
+ const source=JSON.parse(new TextDecoder().decode(await resources.get('characters.json'))),templates={},idles=JSON.parse(new TextDecoder().decode(await resources.get('idle-clips.json')));
  for(const [name,model] of Object.entries(source)){
   const parts=[];
   for(const m of model.meshes){
@@ -22,15 +22,27 @@ export async function loadCharacters(resources,texture){
   template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?model:bones[parent]).add(bones[i]);});
   root.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);
   for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);model.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
-  // Imported OGF skeletons do not all share the same bind heading.
-  // Normalize each to the gameplay convention: forward is -Z.
-  // Rotate the visual after binding, leaving gameplay heading and labels unchanged.
-  model.rotation.y=['bandit','mercenary','dog','controller'].includes(name)?0:Math.PI;
+  // OMF enemy poses already face -Z after conversion; the procedural player
+  // uses its opposite-facing bind pose. Apply heading after binding.
+  model.rotation.y=idles[name]?0:Math.PI;
+  if(idles[name]){
+   const idle=idles[name],tracks=[];
+   for(const track of idle.tracks){
+    const bone=bones.find(b=>b.name===track.bone);if(!bone)throw Error('Missing idle bone '+name+': '+track.bone);
+    for(const [property,values,size,Type] of [['quaternion',track.rotations,4,THREE.QuaternionKeyframeTrack],['position',track.positions,3,THREE.VectorKeyframeTrack]]){
+     const count=values.length/size,times=Array.from({length:count},(_,i)=>i/idle.fps),loopValues=values.slice();
+     if(count>1){times.push(idle.frames/idle.fps);loopValues.push(...values.slice(0,size));}
+     tracks.push(new Type(bone.uuid+'.'+property,times,loopValues));
+    }
+   }
+   const mixer=new THREE.AnimationMixer(model);mixer.clipAction(new THREE.AnimationClip(idle.name,idle.frames/idle.fps,tracks)).play();root.userData.idle=mixer;
+  }
   root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
   return root;
  };
 }
 export function animateCharacter(root,time,moving,active,sitting=false){
+ if(root.userData.idle){root.userData.idle.setTime(time/1000);return;}
  const {bones,rest}=root.userData;root.children[0].position.y=sitting?-.5:0;
  bones.forEach((bone,i)=>{
   bone.quaternion.copy(rest[i]);const name=bone.name.toLowerCase();

@@ -79,9 +79,15 @@ node --check public/game.js
 node tests/resource-cache.mjs
 node tests/follow-camera.mjs
 node tests/collision-materials.mjs
+node tests/character-idles.mjs D:/GameAssets/cordon-royale/web
 # Run a separate server with BIND=127.0.0.1:8788 and a temporary CORDON_SAVES path:
 node tests/room.mjs
 ```
 
 GitHub builds remain disabled. The server owns movement, campfire training, inventory, stage unlocks,
 EXP claims and lootbox rewards. The client sends actions, never balances or item ownership.
+
+Enemy idle poses are imported from local Anomaly OMF clips and loop on the OGF skeletons.
+`tools/import-idles.mjs` converts them; `tools/prepare-cache.mjs` includes them in the
+browser cache. Player movement and combat are still procedural; this does not import
+the original animation state machine. Game animation data remains outside Git.

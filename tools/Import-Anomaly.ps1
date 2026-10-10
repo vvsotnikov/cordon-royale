@@ -23,6 +23,8 @@ foreach($archive in @('meshes/meshes.db0','meshes/meshes_actors.db0','textures/t
 }
 & node "$PSScriptRoot/import-characters.mjs" $base $web
 if($LASTEXITCODE){throw 'Character conversion failed'}
+& node "$PSScriptRoot/import-idles.mjs" $base $web
+if($LASTEXITCODE){throw 'Idle animation conversion failed'}
 $sources=@("$base/textures","$Anomaly/gamedata/textures")
 # MO2 modlist is highest priority first; reverse it so later copies win.
 if(Test-Path "$Gamma/profiles/$Profile/modlist.txt"){
