@@ -39,10 +39,30 @@ try{
   a.send({kind:'input'});await sleep(100);a.send({kind:'claim_exp',stage:0});await sleep(150);assert.equal(a.profile.exp,run+1);assert.deepEqual(a.profile.run_wins,[]);assert.equal(a.state.players.find(p=>p.id===a.id).pos[0],-205);
  }
  a.send({kind:'ascend',tier:1});await sleep(150);assert.equal(a.profile.ascension,1);assert.equal(a.profile.exp,0);
+
+ a.send({kind:'rebirth',rebirth:1});await sleep(150);assert.equal(a.profile.rebirths,0,'reject below threshold');
+ for(let n=0;n<100;n++){const pos=a.state.players.find(p=>p.id===a.id).pos,dx=fire[0]-pos[0],dz=fire[2]-pos[2];if(Math.hypot(dx,dz)<2.5)break;a.send({kind:'input',forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(70);}
+ a.send({kind:'input'});await sleep(100);a.send({kind:'sit'});
+ for(let n=0;n<100&&a.profile.power<100;n++)await sleep(500);
+ assert(a.profile.power>=100,'leather training reaches first rebirth');
+ a.send({kind:'sit'});a.send({kind:'home'});await sleep(150);
+ a.send({kind:'challenge'});await sleep(150);a.send({kind:'rebirth',rebirth:1});await sleep(150);assert.equal(a.profile.rebirths,0,'cannot rebirth during combat');
+ a.send({kind:'retreat'});await sleep(150);
+ const rewards=structuredClone(a.profile);
+ a.send({kind:'rebirth',rebirth:1});a.send({kind:'rebirth',rebirth:1});await sleep(150);
+ assert.equal(a.profile.rebirths,1);assert.equal(a.profile.power,0);assert.deepEqual(a.profile.run_wins,[]);
+ for(const key of ['exp','inventory','weapon','armor','lootboxes','trophies','ascension'])assert.deepEqual(a.profile[key],rewards[key],key+' survives');
+ for(let n=0;n<100;n++){const pos=a.state.players.find(p=>p.id===a.id).pos,dx=fire[0]-pos[0],dz=fire[2]-pos[2];if(Math.hypot(dx,dz)<2.5)break;a.send({kind:'input',forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(70);}
+ a.send({kind:'input'});await sleep(100);a.send({kind:'sit'});
+ for(let n=0;n<40&&a.profile.power<33;n++)await sleep(500);
+ assert(a.profile.power>=33,'rebirth training gains accumulate');
+ a.send({kind:'sit'});a.send({kind:'home'});await sleep(150);a.send({kind:'challenge'});await sleep(150);
+ for(let n=0;n<40&&a.state.players.find(p=>p.id===a.id).duel!==null;n++){a.send({kind:'attack'});await sleep(250);}
+ assert(a.profile.run_wins.includes(0),'new run after rebirth can win');
  const saved=structuredClone(a.profile);saved.inventory.sort((a,b)=>a-b);a.ws.close();await sleep(300);
  const resumed=await client(token);try{assert.deepEqual(resumed.profile,saved)}finally{resumed.ws.close()}
  await sleep(2200);
- console.log('PASS shared room, profile identity, campfire training, removed practice/trader, stage gates, nearest-enemy battle, and reconnect persistence.');
+ console.log('PASS shared room, fresh-profile armor upgrade, first rebirth, post-rebirth combat, preserved rewards, duplicate/combat rejection, and reconnect persistence.');
 }finally{a.ws.close();b.ws.close()}
 
 

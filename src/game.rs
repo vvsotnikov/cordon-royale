@@ -220,6 +220,31 @@ impl Game {
                     Err(e) => e.into(),
                 })
             }
+            "rebirth" if p.duel.is_none() => {
+                if v["rebirth"].as_u64() != Some(p.profile.rebirths as u64 + 1) {
+                    return;
+                }
+                Some(match p.profile.rebirth() {
+                    Ok(()) => {
+                        p.pos = [
+                            -205.,
+                            self.world.floor(-205., 150., -15.).unwrap_or(-20.),
+                            150.,
+                        ];
+                        p.input = Input::default();
+                        p.sitting = false;
+                        p.vertical_velocity = 0.;
+                        p.jump_held = false;
+                        p.next_train = self.time + 1.;
+                        format!(
+                            "Rebirth {} · +{} power / second · Returned to camp",
+                            p.profile.rebirths,
+                            p.profile.gain()
+                        )
+                    }
+                    Err(e) => e.into(),
+                })
+            }
             "open_box" if p.duel.is_none() => Some(match p.profile.open_box(random_roll()) {
                 Ok(n) => format!("Lootbox: {n}"),
                 Err(e) => e.into(),
@@ -516,7 +541,7 @@ mod tests {
         assert_eq!(g.players[&1].profile.exp, 5, "repeat claims need a new run");
         command(&mut g, "ascend");
         assert_eq!(g.players[&1].profile.exp, 0);
-        assert_eq!(g.players[&1].profile.gain(), 3);
+        assert_eq!(g.players[&1].profile.gain(), 3.);
         g.command(1, serde_json::json!({"kind":"ascend","tier":1}));
         assert_eq!(
             g.players[&1].profile.ascension, 1,

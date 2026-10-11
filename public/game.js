@@ -43,6 +43,16 @@ function connect(){
 }
 $('deploy').onclick=connect;
 $('ascend').onclick=()=>{const me=state?.players.find(p=>p.id===id);if(me){send({kind:'ascend',tier:me.profile.ascension+1});$('ascend').disabled=true;}};
+let rebirthOffer=null;
+$('rebirth').onclick=()=>{
+ const me=state?.players.find(p=>p.id===id);if(!me||me.duel!==null)return;
+ const p=me.profile,base=state.armors[p.ascension].gain;
+ rebirthOffer=p.rebirths+1;keys.clear();jumpQueued=false;send({kind:'input'});
+ $('rebirthPreview').textContent=`Rebirth ${rebirthOffer}: ${p.power.toLocaleString()} trained power → 0. Campfire: ${(base*(10+p.rebirths)/10).toLocaleString()} → ${(base*(11+p.rebirths)/10).toLocaleString()} power/second.`;
+ $('rebirthDialog').showModal();
+};
+$('cancelRebirth').onclick=()=>$('rebirthDialog').close();
+$('confirmRebirth').onclick=()=>{send({kind:'rebirth',rebirth:rebirthOffer});$('rebirthDialog').close();};
 $('sit').onclick=()=>send({kind:'sit'});
 $('openBox').onclick=()=>send({kind:'open_box'});
 function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();}
@@ -57,7 +67,7 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventList
 document.addEventListener('mouseup',()=>{dragging=false;});
 document.addEventListener('mousemove',e=>{if(dragging){yaw-=e.movementX*.004;pitch=Math.max(-.1,Math.min(.8,pitch+e.movementY*.003));}});
 document.addEventListener('keydown',e=>{
- if(!playing||e.target instanceof HTMLInputElement)return;
+ if(!playing||$('rebirthDialog').open||e.target instanceof HTMLInputElement)return;
  if(e.code==='Space'&&!e.repeat)jumpQueued=true;
  if(e.code==='KeyI'&&!e.repeat)toggleInventory();if(e.code==='Escape'){$('inventory').hidden=true;keys.clear();}
  if(!$('inventory').hidden)return;
@@ -78,8 +88,9 @@ function rewardUnlocked(p,n){return unlocked(p,n)&&p.run_wins.length>0;}
 function updateUI(me){
  const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} base + ${total-p.power} equipment`;$('exp').textContent=p.exp.toLocaleString();
  const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
- $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=`${me.sitting?'SITTING':'CAMPFIRE'} · +${state.armors[p.ascension].gain} POWER / SECOND`;
- const armor=state.armors[p.ascension],next=state.armors[p.ascension+1];$('armorStatus').textContent=armor.name.toUpperCase();$('ascendHint').textContent=next?`Next: ${next.name} · +${next.gain}/sec · ${Math.max(0,next.cost-p.exp)} more EXP needed`:'NOSOROG · MAXIMUM ARMOR TIER';$('ascend').hidden=!next;$('ascend').disabled=!next||p.exp<next.cost||me.duel!==null;$('ascend').textContent=next?`ASCEND · ${next.cost} EXP`:'';
+ $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=`${me.sitting?'SITTING':'CAMPFIRE'} · +${(state.armors[p.ascension].gain*(10+p.rebirths)/10).toLocaleString()} POWER / SECOND`;
+ const armor=state.armors[p.ascension],next=state.armors[p.ascension+1];$('armorStatus').textContent=armor.name.toUpperCase();$('ascendHint').textContent=next?`Next: ${next.name} · +${(next.gain*(10+p.rebirths)/10).toLocaleString()}/sec · ${Math.max(0,next.cost-p.exp)} more EXP needed`:'NOSOROG · MAXIMUM ARMOR TIER';$('ascend').hidden=!next;$('ascend').disabled=!next||p.exp<next.cost||me.duel!==null;$('ascend').textContent=next?`ASCEND · ${next.cost} EXP`:'';
+ const requirement=100*(p.rebirths+1)**2;$('rebirthHint').textContent=`REBIRTHS ${p.rebirths} · ×${((10+p.rebirths)/10).toLocaleString()} training · ${p.power.toLocaleString()} / ${requirement.toLocaleString()} trained power`;$('rebirth').disabled=p.power<requirement||me.duel!==null||p.rebirths>=100000;$('rebirth').textContent=p.rebirths>=100000?'MAXIMUM REBIRTHS':'REBIRTH · PREVIEW';
  $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
  document.body.classList.toggle('fighting',me.duel!==null);
  $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`${p.name.toUpperCase()} VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(me.duel_progress*100)+'%';$('duelHint').textContent=`Your power ${total.toLocaleString()} · Opponent ${o.power.toLocaleString()}`;$('attack').textContent='CLICK TO MOG';}

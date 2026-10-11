@@ -107,6 +107,8 @@ pub struct Profile {
     pub trophies: Vec<usize>,
     pub run_wins: Vec<usize>,
     pub ascension: usize,
+    pub rebirths: u32,
+    pub training_tenths: u64,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -121,6 +123,8 @@ impl Default for Profile {
             trophies: vec![],
             run_wins: vec![],
             ascension: 0,
+            rebirths: 0,
+            training_tenths: 0,
         }
     }
 }
@@ -136,6 +140,8 @@ impl Profile {
         if !self.inventory.contains(&self.armor) || ITEMS[self.armor].slot != "armor" {
             self.armor = 5;
         }
+        self.rebirths = self.rebirths.min(100_000);
+        self.training_tenths %= 10;
         self.ascension = self.ascension.min(ARMORS.len() - 1);
         self.run_wins.retain(|&n| n < 5);
         self.run_wins.sort_unstable();
@@ -153,8 +159,27 @@ impl Profile {
             self.name = "Stalker".into();
         }
     }
-    pub fn gain(&self) -> u64 {
-        ARMORS[self.ascension].gain
+    pub fn gain(&self) -> f64 {
+        self.gain_tenths() as f64 / 10.
+    }
+    fn gain_tenths(&self) -> u64 {
+        ARMORS[self.ascension].gain * (10 + self.rebirths as u64)
+    }
+    pub fn rebirth_requirement(&self) -> u64 {
+        100 * (self.rebirths as u64 + 1).pow(2)
+    }
+    pub fn rebirth(&mut self) -> Result<(), &'static str> {
+        if self.rebirths >= 100_000 {
+            return Err("Maximum rebirths reached.");
+        }
+        if self.power < self.rebirth_requirement() {
+            return Err("Train more power before rebirthing. Equipment does not count.");
+        }
+        self.rebirths += 1;
+        self.power = 0;
+        self.training_tenths = 0;
+        self.run_wins.clear();
+        Ok(())
     }
     pub fn ascend(&mut self) -> Result<(), &'static str> {
         let next = ARMORS
@@ -176,10 +201,12 @@ impl Profile {
             .saturating_add(ITEMS[self.armor].power)
     }
     pub fn train(&mut self) {
+        let tenths = self.training_tenths + self.gain_tenths();
         self.power = self
             .power
-            .saturating_add(self.gain())
+            .saturating_add(tenths / 10)
             .min(1_000_000_000_000);
+        self.training_tenths = tenths % 10;
     }
     pub fn unlocked(&self, stage: usize) -> bool {
         stage == 0 || self.run_wins.contains(&(stage - 1))
@@ -231,6 +258,46 @@ impl Profile {
 mod tests {
     use super::*;
     #[test]
+    fn rebirth_preserves_rewards_and_fractional_training() {
+        let mut p = Profile::default();
+        p.inventory.extend([4, 7]);
+        p.weapon = 4;
+        p.armor = 7;
+        p.power = 99;
+        assert!(p.rebirth().is_err(), "equipment cannot satisfy threshold");
+        p.power = 100;
+        p.exp = 7;
+        p.ascension = 1;
+        p.lootboxes = 2;
+        p.victory(0, 99);
+        p.rebirth().unwrap();
+        assert_eq!(p.power, 0);
+        assert!(p.run_wins.is_empty());
+        assert_eq!(
+            (p.exp, p.ascension, p.lootboxes, p.weapon, p.armor),
+            (7, 1, 2, 4, 7)
+        );
+        assert_eq!(p.trophies, vec![0]);
+        assert_eq!(p.inventory, vec![0, 5, 4, 7]);
+        assert_eq!(p.gain(), 3.3);
+        assert_eq!(p.rebirth_requirement(), 400);
+        for _ in 0..3 {
+            p.train();
+        }
+        let mut p: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        p.sanitize();
+        for _ in 0..7 {
+            p.train();
+        }
+        assert_eq!(p.power, 33);
+        assert_eq!(p.training_tenths, 0);
+        assert!(p.rebirth().is_err());
+        p.power = 400;
+        p.rebirth().unwrap();
+        assert_eq!(p.gain(), 3.6);
+        assert_eq!(p.rebirth_requirement(), 900);
+    }
+    #[test]
     fn unlocks_and_rare_loot() {
         let mut p = Profile::default();
         assert!(p.unlocked(0));
@@ -260,7 +327,7 @@ mod tests {
             let exp = p.exp;
             p.ascend().unwrap();
             assert_eq!(p.exp, exp - ARMORS[tier].cost);
-            assert_eq!(p.gain(), ARMORS[tier].gain);
+            assert_eq!(p.gain(), ARMORS[tier].gain as f64);
             assert_eq!(p.power, 123);
             assert!(p.unlocked(1));
         }
@@ -269,7 +336,7 @@ mod tests {
         let mut restored: Profile =
             serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
         restored.sanitize();
-        assert_eq!(restored.gain(), 300);
+        assert_eq!(restored.gain(), 300.);
         assert_eq!(restored.run_wins, p.run_wins);
         let mut poor = Profile::default();
         assert!(poor.ascend().is_err());

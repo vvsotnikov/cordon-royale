@@ -12,3 +12,5 @@
 body.fighting #actions,body.fighting #rankPanel,body.fighting #stageMarkers,body.fighting #nextEnemy,body.fighting #controls,body.fighting #stats{display:none}#duelPanel{top:auto;bottom:35px;width:min(650px,90vw);background:#10201bcc}#duelPanel .bar{height:24px;background:#b94b37;position:relative}#duelPanel .bar:after{content:'';position:absolute;left:50%;top:0;height:100%;border-left:2px solid #fff8}#duelBar{background:#d8f071}#duelPanel #attack{min-height:46px}#duelPanel #retreat{padding:8px;margin:8px auto 0}#armorStatus{color:var(--acid);font-weight:bold}#ascendHint{margin-top:8px}body.fighting #notification{top:100px;padding:0 20px}
 
 #duelPanel{padding:12px;bottom:20px}#duelPanel .bar{margin:8px 0}#duelPanel p{margin:8px 0}#duelPanel #attack{width:76%;min-height:42px}#duelPanel #retreat{display:inline-block;width:22%;margin:0;min-height:42px;vertical-align:top}
+
+#rebirthDialog{color:var(--ink);background:#10201b;border:1px solid var(--acid);border-radius:8px;max-width:460px;padding:28px;pointer-events:auto}#rebirthDialog::backdrop{background:#000a}#rebirthDialog p{line-height:1.6}#rebirthHint{border-top:1px solid #a2b38340;padding-top:10px}
