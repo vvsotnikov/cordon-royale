@@ -40,6 +40,8 @@ pub struct Player {
     pub vertical_velocity: f32,
     #[serde(skip)]
     pub jump_held: bool,
+    #[serde(skip)]
+    pub jump_origin: V,
 }
 #[derive(Serialize)]
 pub struct Opponent {
@@ -139,6 +141,7 @@ impl Game {
                 next_train: 0.,
                 vertical_velocity: 0.,
                 jump_held: false,
+                jump_origin: [x, y, z],
             },
         );
         true
@@ -333,6 +336,7 @@ impl Game {
             let scale =
                 if p.input.sprint { 7.4 } else { 4.8 } * 0.05 / (f * f + r * r).sqrt().max(1.);
             if p.input.jump && !p.jump_held && p.vertical_velocity == 0. {
+                p.jump_origin = p.pos;
                 p.vertical_velocity = 7.;
             }
             p.jump_held = p.input.jump;
@@ -345,6 +349,7 @@ impl Game {
                 self.world.move_player(p.pos, dx, dz)
             };
             if self.world.below_map(p.pos) {
+                eprintln!("Out-of-map recovery: player={id}, jump_origin={:?}, position={:?}, velocity={}", p.jump_origin, p.pos, p.vertical_velocity);
                 p.pos = [
                     -205.,
                     self.world.floor(-205., 150., -15.).unwrap_or(-20.),

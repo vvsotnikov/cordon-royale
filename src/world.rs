@@ -136,7 +136,12 @@ impl World {
             let len = dist(delta, [0.; 3]);
             // Keep the lowest horizontal sweep inside the landing probe
             // margin (2 cm), so rising ground cannot swallow the feet.
+            // Cordon omits terrain under some buildings. Reject entry into
+            // unsupported collision space, as grounded movement already does.
             if len > 0.0001
+                && self
+                    .floor(p[0] + delta[0], p[2] + delta[2], p[1] + 0.02)
+                    .is_some()
                 && ![0.005, 0.55, 1.1, 1.7].iter().any(|h| {
                     self.ray(add(p, [0., *h, 0.]), mul(delta, 1. / len), len)
                         .is_some()
@@ -272,6 +277,39 @@ mod tests {
         assert!(p[1] >= p[0] * 0.4 - 0.001, "feet entered slope: {p:?}");
     }
     #[test]
+    fn airborne_movement_rejects_void_but_allows_lower_landings() {
+        for lower_floor in [false, true] {
+            let mut triangles = vec![
+                [[0., 0., 0.], [1., 0., 0.], [1., 0., 2.]],
+                [[0., 0., 0.], [1., 0., 2.], [0., 0., 2.]],
+            ];
+            if lower_floor {
+                triangles.extend([
+                    [[1., -2., 0.], [4., -2., 0.], [4., -2., 2.]],
+                    [[1., -2., 0.], [4., -2., 2.], [1., -2., 2.]],
+                ]);
+            }
+            let ids = (0..triangles.len()).collect();
+            let w = World {
+                triangles,
+                grid: HashMap::from([((0, 0), ids)]),
+                minimum_y: -2.,
+            };
+            let mut p = [0.95, 0.8, 1.];
+            let mut velocity = -1.;
+            p = w.jump_move(p, 0.2, 0., &mut velocity);
+            assert_eq!(p[0] > 1., lower_floor);
+            for _ in 0..50 {
+                if velocity == 0. {
+                    break;
+                }
+                p = w.jump_move(p, 0., 0., &mut velocity);
+            }
+            assert_eq!(velocity, 0.);
+            assert!((p[1] - if lower_floor { -2. } else { 0. }).abs() < 0.001);
+        }
+    }
+    #[test]
     fn jump_lands_and_stops_at_ceiling() {
         for ceiling in [false, true] {
             let w = staircase(ceiling, false);
@@ -381,6 +419,44 @@ mod tests {
                     assert_eq!(velocity, 0., "jump never landed from {x},{z}: {p:?}");
                 }
             }
+        }
+    }
+    #[test]
+    #[ignore = "requires imported Cordon assets"]
+    fn cordon_jump_stress() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let w = World::load(&Path::new(&root).join("collision.cform")).unwrap();
+        let mut seed = 719_u32;
+        let mut random = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed >> 8) as f32 / 16777216.
+        };
+        for case in 0..4000 {
+            let x = -255. + random() * 70.;
+            let z = 90. + random() * 80.;
+            let Some(y) = w.floor(x, z, -15.) else {
+                continue;
+            };
+            let angle = random() * std::f32::consts::TAU;
+            let mut p = [x, y, z];
+            let mut velocity = 7.;
+            let mut history = Vec::new();
+            for tick in 0..120 {
+                let a = angle + (tick as f32 * 0.17).sin() * 0.6;
+                let dx = a.sin() * 0.37;
+                let dz = a.cos() * 0.37;
+                history.push((p, velocity, dx, dz));
+                p = w.jump_move(p, dx, dz, &mut velocity);
+                assert!(
+                    !w.below_map(p),
+                    "case {case}, start {x},{y},{z}: {history:?}"
+                );
+                if velocity == 0. {
+                    break;
+                }
+            }
+            assert_eq!(velocity, 0., "case {case}, jump did not land: {history:?}");
         }
     }
     #[test]
