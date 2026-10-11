@@ -111,8 +111,11 @@ function frame(now){
   if(!campVisual)makeCamp();
   selected=-1;let closest=4.5;state.opponents.forEach((o,n)=>{const d=Math.hypot(...o.pos.map((v,i)=>v-me.pos[i]));if(d<=closest){closest=d;selected=n;}});
   const present=new Set();for(const p of state.players){present.add(p.id);let actor=actors.get(p.id);if(!actor){actor=stalker();actors.set(p.id,actor);actor.position.fromArray(p.pos);const tag=label(p.profile.name);tag.position.y=2.15;tag.visible=p.id!==id;actor.add(tag);}
-   const moving=actor.position.distanceTo(new THREE.Vector3(...p.pos))>.025;actor.position.lerp(new THREE.Vector3(...p.pos),1-Math.exp(-dt*18));actor.rotation.y=p.yaw;
-   const data=actor.userData;animateCharacter(actor,now,moving,p.duel!==null,p.sitting);
+   const previousX=actor.position.x,previousZ=actor.position.z;actor.position.lerp(new THREE.Vector3(...p.pos),1-Math.exp(-dt*18));actor.rotation.y=p.yaw;
+   const data=actor.userData,dx=actor.position.x-previousX,dz=actor.position.z-previousZ;
+   const speed=Math.hypot(dx,dz)/Math.max(dt,.001);data.speed=(data.speed||0)+(Math.min(speed,8)-(data.speed||0))*(1-Math.exp(-dt*12));
+   if(data.speed>.2)actor.rotation.y=Math.atan2(-dx,-dz);
+   animateCharacter(actor,now,data.speed,p.duel!==null,p.sitting);
    if(p.duel!==null){const o=state.opponents[p.duel];actor.rotation.y=Math.atan2(-(o.pos[0]-p.pos[0]),-(o.pos[2]-p.pos[2]));
     if(now-(data.lastShot||0)>300){data.lastShot=now;const geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...p.pos).add(new THREE.Vector3(0,1.15,0)),new THREE.Vector3(...o.pos).add(new THREE.Vector3(0,o.species==='dog'?.5:1.1,0))]);const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color:0xffd786,transparent:true,opacity:.8}));scene.add(line);tracers.push({line,until:now+70});if(p.id===id)sound();}
    }

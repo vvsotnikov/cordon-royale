@@ -6,8 +6,21 @@ function bindMatrix(b){
  for(let i=0;i<16;i++)if((i%4===2)!==(Math.floor(i/4)===2))a[i]*=-1;
  return new THREE.Matrix4().fromArray(a);
 }
+function makeClip(idle,bones){
+   const tracks=[];
+   for(const track of idle.tracks){
+    const bone=bones.find(b=>b.name===track.bone);if(!bone)throw Error('Missing idle bone '+track.bone);
+    for(const [property,values,size,Type] of [['quaternion',track.rotations,4,THREE.QuaternionKeyframeTrack],['position',track.positions,3,THREE.VectorKeyframeTrack]]){
+     const count=values.length/size,times=Array.from({length:count},(_,i)=>i/idle.fps),loopValues=values.slice();
+     if(count>1){times.push(idle.frames/idle.fps);loopValues.push(...values.slice(0,size));}
+     tracks.push(new Type(bone.uuid+'.'+property,times,loopValues));
+    }
+   }
+
+ return new THREE.AnimationClip(idle.name,idle.frames/idle.fps,tracks);
+}
 export async function loadCharacters(resources,texture){
- const source=JSON.parse(new TextDecoder().decode(await resources.get('characters.json'))),templates={},idles=JSON.parse(new TextDecoder().decode(await resources.get('idle-clips.json')));
+ const source=JSON.parse(new TextDecoder().decode(await resources.get('characters.json'))),templates={},idles=JSON.parse(new TextDecoder().decode(await resources.get('idle-clips.json'))),playerMotion=JSON.parse(new TextDecoder().decode(await resources.get('player-motion.json')));
  for(const [name,model] of Object.entries(source)){
   const parts=[];
   for(const m of model.meshes){
@@ -26,26 +39,33 @@ export async function loadCharacters(resources,texture){
   // uses its opposite-facing bind pose. Apply heading after binding.
   model.rotation.y=idles[name]?0:Math.PI;
   if(idles[name]){
-   const idle=idles[name],tracks=[];
-   for(const track of idle.tracks){
-    const bone=bones.find(b=>b.name===track.bone);if(!bone)throw Error('Missing idle bone '+name+': '+track.bone);
-    for(const [property,values,size,Type] of [['quaternion',track.rotations,4,THREE.QuaternionKeyframeTrack],['position',track.positions,3,THREE.VectorKeyframeTrack]]){
-     const count=values.length/size,times=Array.from({length:count},(_,i)=>i/idle.fps),loopValues=values.slice();
-     if(count>1){times.push(idle.frames/idle.fps);loopValues.push(...values.slice(0,size));}
-     tracks.push(new Type(bone.uuid+'.'+property,times,loopValues));
-    }
-   }
-   const mixer=new THREE.AnimationMixer(model);mixer.clipAction(new THREE.AnimationClip(idle.name,idle.frames/idle.fps,tracks)).play();root.userData.idle=mixer;
+   const idle=idles[name];
+   const mixer=new THREE.AnimationMixer(model);mixer.clipAction(makeClip(idle,bones)).play();root.userData.idle=mixer;
   }
-  root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
+  if(name==='stalker'){
+   const mixer=new THREE.AnimationMixer(model),actions=Object.fromEntries(Object.entries(playerMotion).map(([state,clip])=>[state,mixer.clipAction(makeClip(clip,bones))]));
+   root.userData.motion={mixer,actions,state:null,lastTime:null};
+  }
+  root.userData.restPositions=bones.map(b=>b.position.clone());root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
   return root;
  };
 }
 export function animateCharacter(root,time,moving,active,sitting=false){
  if(root.userData.idle){root.userData.idle.setTime(time/1000);return;}
- const {bones,rest}=root.userData;root.children[0].position.y=sitting?-.5:0;
+ const {bones,rest,motion}=root.userData,model=root.children[0];model.position.y=sitting?-.5:0;
+ if(motion){
+  const dt=motion.lastTime===null?0:Math.min(.1,Math.max(0,(time-motion.lastTime)/1000));motion.lastTime=time;
+  if(!sitting){
+   const speed=typeof moving==='number'?moving:(moving?4.8:0),state=speed<.2?'idle':speed>6?'run':'walk';
+   model.rotation.y=0;
+   if(state!==motion.state){const previous=motion.actions[motion.state],next=motion.actions[state];next.reset().setEffectiveWeight(1).play();if(previous)previous.crossFadeTo(next,.18,false);motion.state=state;}
+   motion.mixer.update(dt);return;
+  }
+  motion.mixer.stopAllAction();motion.state=null;model.rotation.y=Math.PI;
+ }
+
  bones.forEach((bone,i)=>{
-  bone.quaternion.copy(rest[i]);const name=bone.name.toLowerCase();
+  bone.position.copy(root.userData.restPositions[i]);bone.quaternion.copy(rest[i]);const name=bone.name.toLowerCase();
   const side=/(_l_|left)/.test(name)?1:-1;
   if(sitting&&/thigh/.test(name))bone.rotateX(-1.3);
   if(sitting&&/calf/.test(name))bone.rotateX(1.3);

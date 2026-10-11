@@ -25,6 +25,8 @@ foreach($archive in @('textures/textures_sky.db0','meshes/meshes.db0','meshes/me
 if($LASTEXITCODE){throw 'Character conversion failed'}
 & node "$PSScriptRoot/import-idles.mjs" $base $web
 if($LASTEXITCODE){throw 'Idle animation conversion failed'}
+& node "$PSScriptRoot/import-player-motion.mjs" $base $web $Gamma $Profile $Anomaly
+if($LASTEXITCODE){throw 'Player animation conversion failed'}
 New-Item -ItemType Directory "$web/textures/sky" -Force | Out-Null
 Copy-Item "$base/textures/sky/sky_1_clouds_cube.dds" "$web/textures/sky/sky_1_clouds_cube.dds"
 $sources=@("$base/textures","$Anomaly/gamedata/textures")

@@ -81,6 +81,7 @@ node tests/dds.mjs
 node tests/follow-camera.mjs
 node tests/collision-materials.mjs
 node tests/character-idles.mjs D:/GameAssets/cordon-royale/web
+node tests/player-motion.mjs D:/GameAssets/cordon-royale/web
 # Run a separate server with BIND=127.0.0.1:8788 and a temporary CORDON_SAVES path:
 node tests/room.mjs
 ```
@@ -90,5 +91,8 @@ EXP claims and lootbox rewards. The client sends actions, never balances or item
 
 Enemy idle poses are imported from local Anomaly OMF clips and loop on the OGF skeletons.
 `tools/import-idles.mjs` converts them; `tools/prepare-cache.mjs` includes them in the
-browser cache. Player movement and combat are still procedural; this does not import
-the original animation state machine. Game animation data remains outside Git.
+browser cache. Player idle, walk and run clips use the highest-priority enabled GAMMA
+stalker animation override, falling back to local Anomaly resources. Run
+`tools/import-player-motion.mjs` with the same base/output paths to refresh them, then
+regenerate the cache. Sitting remains procedural; the original animation state machine
+is not imported. Game animation data remains outside Git.
