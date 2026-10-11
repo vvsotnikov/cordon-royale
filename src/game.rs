@@ -344,6 +344,16 @@ impl Game {
             } else {
                 self.world.move_player(p.pos, dx, dz)
             };
+            if self.world.below_map(p.pos) {
+                p.pos = [
+                    -205.,
+                    self.world.floor(-205., 150., -15.).unwrap_or(-20.),
+                    150.,
+                ];
+                p.vertical_velocity = 0.;
+                p.jump_held = p.input.jump;
+                p.input = Input::default();
+            }
         }
         for id in trained {
             self.remember(id);
@@ -419,6 +429,15 @@ mod tests {
             1,
             "EXP is a score, not a training bonus"
         );
+        let saved = g.players[&1].profile.clone();
+        g.players.get_mut(&1).unwrap().pos[1] = -57000.;
+        g.players.get_mut(&1).unwrap().vertical_velocity = -100.;
+        g.tick();
+        assert_eq!(g.players[&1].pos[0], -205.);
+        assert!(g.players[&1].pos[1] > -30.);
+        assert_eq!(g.players[&1].vertical_velocity, 0.);
+        assert_eq!(g.players[&1].profile.exp, saved.exp);
+        assert_eq!(g.players[&1].profile.power, saved.power);
         g.leave(1);
         g.join(2, "test".into());
         assert_eq!(g.players[&2].profile.exp, 5);

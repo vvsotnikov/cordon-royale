@@ -25,6 +25,7 @@ pub fn dist(a: V, b: V) -> f32 {
 pub struct World {
     triangles: Vec<[V; 3]>,
     grid: HashMap<(i32, i32), Vec<usize>>,
+    minimum_y: f32,
 }
 impl World {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
@@ -48,6 +49,7 @@ impl World {
         let mut world = Self {
             triangles: Vec::new(),
             grid: HashMap::new(),
+            minimum_y: f32::INFINITY,
         };
         for i in 0..nt {
             let p = 36 + nv * 12 + i * 16;
@@ -64,6 +66,9 @@ impl World {
             if xmax < -400. || xmin > 80. || zmax < -100. || zmin > 430. {
                 continue;
             }
+            world.minimum_y = world
+                .minimum_y
+                .min(tri.iter().map(|v| v[1]).fold(f32::INFINITY, f32::min));
             let id = world.triangles.len();
             world.triangles.push(tri);
             for x in (xmin / 8.).floor() as i32..=(xmax / 8.).floor() as i32 {
@@ -119,6 +124,9 @@ impl World {
     pub fn floor(&self, x: f32, z: f32, top: f32) -> Option<f32> {
         self.ray([x, top, z], [0., -1., 0.], 120.).map(|t| top - t)
     }
+    pub fn below_map(&self, pos: V) -> bool {
+        pos[1] < self.minimum_y - 5.
+    }
     pub fn jump_move(&self, pos: V, dx: f32, dz: f32, velocity: &mut f32) -> V {
         let mut p = pos;
         let steps = (dx.abs().max(dz.abs()) / 0.1).ceil().max(1.) as usize;
@@ -126,8 +134,10 @@ impl World {
             (0..steps).flat_map(|_| [[dx / steps as f32, 0., 0.], [0., 0., dz / steps as f32]])
         {
             let len = dist(delta, [0.; 3]);
+            // Keep the lowest horizontal sweep inside the landing probe
+            // margin (2 cm), so rising ground cannot swallow the feet.
             if len > 0.0001
-                && ![0.05, 0.55, 1.1, 1.7].iter().any(|h| {
+                && ![0.005, 0.55, 1.1, 1.7].iter().any(|h| {
                     self.ray(add(p, [0., *h, 0.]), mul(delta, 1. / len), len)
                         .is_some()
                 })
@@ -244,7 +254,22 @@ mod tests {
         World {
             triangles,
             grid: HashMap::from([((0, 0), ids)]),
+            minimum_y: 0.,
         }
+    }
+    #[test]
+    fn descending_jump_cannot_enter_rising_ground() {
+        let w = World {
+            triangles: vec![
+                [[0., 0., 0.], [2., 0.8, 0.], [2., 0.8, 2.]],
+                [[0., 0., 0.], [2., 0.8, 2.], [0., 0., 2.]],
+            ],
+            grid: HashMap::from([((0, 0), vec![0, 1])]),
+            minimum_y: 0.,
+        };
+        let mut velocity = -0.1;
+        let p = w.jump_move([0.5, 0.21, 0.5], 0.1, 0., &mut velocity);
+        assert!(p[1] >= p[0] * 0.4 - 0.001, "feet entered slope: {p:?}");
     }
     #[test]
     fn jump_lands_and_stops_at_ceiling() {
@@ -329,6 +354,36 @@ mod tests {
         }
     }
     #[test]
+    #[ignore = "requires imported Cordon assets"]
+    fn cordon_jumps_near_reported_fall() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let w = World::load(&Path::new(&root).join("collision.cform")).unwrap();
+        for x in -248..=-241 {
+            for z in 98..=105 {
+                let Some(y) = w.floor(x as f32, z as f32, 0.) else {
+                    continue;
+                };
+                for direction in 0..8 {
+                    let angle = direction as f32 * std::f32::consts::FRAC_PI_4;
+                    let mut p = [x as f32, y, z as f32];
+                    let mut velocity = 7.;
+                    for _ in 0..100 {
+                        p = w.jump_move(p, angle.sin() * 0.37, angle.cos() * 0.37, &mut velocity);
+                        assert!(
+                            !w.below_map(p),
+                            "fell below Cordon at start {x},{z}, direction {direction}: {p:?}"
+                        );
+                        if velocity == 0. {
+                            break;
+                        }
+                    }
+                    assert_eq!(velocity, 0., "jump never landed from {x},{z}: {p:?}");
+                }
+            }
+        }
+    }
+    #[test]
     fn ray_hits_both_sides_and_rejects_misses() {
         let t = [[0., 0., 0.], [2., 0., 0.], [0., 0., 2.]];
         assert_eq!(ray_triangle([0.5, 2., 0.5], [0., -1., 0.], t), Some(2.));
@@ -340,6 +395,7 @@ mod tests {
         let world = World {
             triangles: vec![triangle],
             grid: HashMap::from([((1, 0), vec![0])]),
+            minimum_y: -1.,
         };
         let direction = [0.8, 0., 0.6];
         assert!(world.ray([7.9, 0., 7.7], direction, 4.).is_some());
