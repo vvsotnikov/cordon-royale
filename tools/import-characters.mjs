@@ -8,7 +8,22 @@ if(path.resolve(out).toLowerCase().startsWith(repo.toLowerCase()+path.sep)||path
 function chunks(b){const m=new Map();for(let p=0;p<b.length;){const id=b.readUInt32LE(p),n=b.readUInt32LE(p+4);if(id&0x80000000||p+8+n>b.length)throw Error('Unsupported OGF chunk');m.set(id,b.subarray(p+8,p+8+n));p+=8+n;}return m;}
 function reader(b){return {b,p:0,u(){const v=b.readUInt32LE(this.p);this.p+=4;return v;},f(){const v=b.readFloatLE(this.p);this.p+=4;return v;},s(){const end=b.indexOf(0,this.p);if(end<0)throw Error('Missing string terminator');const v=b.toString('utf8',this.p,end);this.p=end+1;return v;}};}
 const models={stalker:'actors/stalker_neutral/st_nt_1',bandit:'actors/stalker_bandit/stalker_bandit2a',mercenary:'actors/stalker_merc/stalker_merc_0',dog:'monsters/dog/dog',bloodsucker:'monsters/krovosos/krovosos',controller:'monsters/controller/controller_1'};
-Object.assign(models,{player_0:'actors/stalker_hero_coc/sviter_3',player_1:'actors/stalker_neutral/stalker_neutral0a',player_2:'actors/stalker_neutral/stalker_neutral1a',player_3:'actors/stalker_neutral/stalker_neutral3a',player_4:'actors/stalker_neutral/stalker_neutral4a',player_5:'actors/stalker_dolg/stalker_dolg4nosorog'});
+// Outfit filenames are not a tier sequence: use the equipped actor visual,
+// not the dropped-item visual or a similarly named NPC variant.
+const outfits={player_1:['o_novice','novice_outfit'],player_2:['o_sunrise','stalker_outfit'],player_3:['o_seva','scientific_outfit'],player_4:['o_exoskeleton','exo_outfit'],player_5:['o_nosorog','dolg_nosorog_outfit']};
+models.player_0='actors/stalker_hero_coc/sviter_3';
+for(const [id,[file,section]] of Object.entries(outfits)){
+ const text=fs.readFileSync(path.join(source,'configs/items/outfits',file+'.ltx'),'utf8');
+ let current='',visual;
+ for(const raw of text.split(/\r?\n/)){
+  const line=raw.split(';')[0].trim(),header=line.match(/^\[([^\]]+)\]/);
+  if(header)current=header[1];
+  if(current===section){const value=line.match(/^actor_visual\s*=\s*(\S+)/);if(value)visual=value[1];}
+ }
+ if(!visual)throw Error('Missing actor_visual in '+file+' ['+section+']');
+ models[id]=visual.replaceAll('\\','/').replace(/\.ogf$/i,'');
+ console.log(id+' ['+section+'] -> '+models[id]);
+}
 const result={},textures=new Set();
 for(const [name,file] of Object.entries(models)){
  const c=chunks(fs.readFileSync(path.join(source,'meshes',file+'.ogf'))),r=reader(c.get(13)),count=r.u(),bones=[];
@@ -35,7 +50,7 @@ for(const [name,file] of Object.entries(models)){
   const texture=m.get(2).toString().split('\0')[0].replaceAll('\\','/').toLowerCase();textures.add(texture);
   meshes.push({positions,uv,indices,joints,weights,texture});
  }
- result[name]={bones,meshes};
+ result[name]={sourceModel:file,outfitSection:outfits[name]?.[1]??null,bones,meshes};
 }
 const terrain=['terrain/terrain_escape_mask','detail/detail_grnd_grass','detail/detail_asfalt_det1','detail/detail_earth_det1','detail/detail_grnd_pebbles'];
 for(const name of [...textures,...terrain]){const target=path.join(out,'textures',name+'.dds');fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(source,'textures',name+'.dds'),target);}
