@@ -78,6 +78,7 @@ cargo test cordon_ -- --ignored # requires imported Cordon assets
 node --check public/game.js
 node tests/resource-cache.mjs
 node tests/dds.mjs
+node tests/world-materials.mjs
 node tests/follow-camera.mjs
 node tests/collision-materials.mjs
 node tests/character-idles.mjs D:/GameAssets/cordon-royale/web

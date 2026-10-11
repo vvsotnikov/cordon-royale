@@ -1,6 +1,7 @@
 // Converts documented X-Ray v14 chunks to browser buffers. No game files belong in Git.
 import fs from 'node:fs';
 import path from 'node:path';
+import {usesAlphaCutout} from './world-materials.mjs';
 const [source,out]=process.argv.slice(2);
 if(!source||!out)throw Error('Usage: node tools/import-level.mjs <extracted level folder> <external output>');
 fs.mkdirSync(out,{recursive:true});
@@ -32,7 +33,7 @@ for(const visual of chunks(level.get(3)).values()){
  }
  for(let n=0;n<count;n+=3){const a=i.readUInt16LE((ibase+n)*2),b=i.readUInt16LE((ibase+n+1)*2),d=i.readUInt16LE((ibase+n+2)*2);if(Math.max(a,b,d)>=vn)throw Error('Invalid visual index');indices.writeUInt16LE(a,n*2);indices.writeUInt16LE(d,n*2+2);indices.writeUInt16LE(b,n*2+4);}
  const pad=Buffer.alloc((4-indices.length%4)%4);
- meshes.push({offset:bytes,vertices:vn,indices:count,texture:texture.replaceAll('\\','/'),alpha:/aref|tree|flora|fence|leaves/.test(shader)});bins.push(vertices,indices,pad);bytes+=vertices.length+indices.length+pad.length;triangles+=count/3;textures.add(texture);
+ meshes.push({offset:bytes,vertices:vn,indices:count,texture:texture.replaceAll('\\','/'),alpha:usesAlphaCutout(shader)});bins.push(vertices,indices,pad);bytes+=vertices.length+indices.length+pad.length;triangles+=count/3;textures.add(texture);
 }
 fs.writeFileSync(path.join(out,'world.bin'),Buffer.concat(bins));fs.writeFileSync(path.join(out,'world.json'),JSON.stringify({version:1,meshes,triangles}));
 fs.writeFileSync(path.join(out,'textures-needed.txt'),[...textures].sort().join('\n'));
