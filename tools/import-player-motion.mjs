@@ -5,10 +5,14 @@ const [base,out,gamma='D:/GAMMA',profile='G.A.M.M.A',anomaly='D:/Anomaly']=proce
 if(!base||!out)throw Error('Usage: import-player-motion.mjs <extracted Anomaly> <external web directory> [GAMMA] [profile] [Anomaly]');
 const repo=path.resolve(import.meta.dirname,'..').toLowerCase(),destination=path.resolve(out).toLowerCase();
 if(destination===repo||destination.startsWith(repo+path.sep))throw Error('Game resources must remain outside the repository');
-const relative='meshes/actors/stalker_animation.omf',list=path.join(gamma,'profiles',profile,'modlist.txt');
-const candidates=fs.existsSync(list)?fs.readFileSync(list,'utf8').split(/\r?\n/).filter(s=>s.startsWith('+')).map(s=>path.join(gamma,'mods',s.slice(1),'gamedata',relative)):[];
-candidates.push(path.join(anomaly,'gamedata',relative),path.join(base,relative));
-const source=candidates.find(p=>fs.existsSync(p));if(!source)throw Error('Missing stalker animations');
+const list=path.join(gamma,'profiles',profile,'modlist.txt');
+function resolveMotion(file){
+ const relative='meshes/actors/'+file+'.omf';
+ const candidates=fs.existsSync(list)?fs.readFileSync(list,'utf8').split(/\r?\n/).filter(s=>s.startsWith('+')).map(s=>path.join(gamma,'mods',s.slice(1),'gamedata',relative)):[];
+ candidates.push(path.join(anomaly,'gamedata',relative),path.join(base,relative));
+ const source=candidates.find(p=>fs.existsSync(p));if(!source)throw Error('Missing '+file);return source;
+}
+const source=resolveMotion('stalker_animation');
 const data=fs.readFileSync(source),clips={};
 for(const [state,name] of Object.entries({idle:'norm_idle_1',walk:'norm_walk_fwd_1',run:'norm_run_fwd_1'})){
  const clip=decodeIdle(data,name);
@@ -17,4 +21,9 @@ for(const [state,name] of Object.entries({idle:'norm_idle_1',walk:'norm_walk_fwd
  if(root&&root.positions.length>3){for(const axis of [0,2]){const start=root.positions[axis],end=root.positions.at(-3+axis),frames=root.positions.length/3;for(let i=0;i<frames;i++)root.positions[i*3+axis]-=(end-start)*i/(frames-1);}}
  clips[state]=clip;
 }
+const campSource=resolveMotion('stalker_scripts_animation'),campData=fs.readFileSync(campSource);
+for(const [state,name] of Object.entries({sitDown:'idle_0_to_sit_0',sit:'sit_0_idle_0',standUp:'sit_0_to_idle_0'})){
+ const clip=decodeIdle(campData,name);clip.loop=state==='sit';clips[state]=clip;
+}
+console.log('Campfire motion source: '+campSource);
 fs.writeFileSync(path.join(out,'player-motion.json'),JSON.stringify(clips));console.log('Player motion source: '+source);console.log(Object.fromEntries(Object.entries(clips).map(([k,c])=>[k,{frames:c.frames,fps:c.fps}])));

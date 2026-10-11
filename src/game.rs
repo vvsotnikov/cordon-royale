@@ -192,6 +192,9 @@ impl Game {
                     Some("Walk to the campfire to sit.".into())
                 } else {
                     p.sitting = !p.sitting;
+                    if p.sitting {
+                        p.yaw = (p.pos[0] - campfire[0]).atan2(p.pos[2] - campfire[2]);
+                    }
                     p.next_train = self.time + 1.;
                     p.input = Input::default();
                     None

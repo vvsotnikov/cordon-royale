@@ -8,7 +8,8 @@ press E, then click to push toward victory while the opponent pushes back.
 There is no fixed fight deadline. Retreat earns no reward. The server accepts
 at most one attack per simulation tick; client-supplied damage is ignored.
 
-Sit at the campfire (F) to gain power. Spend earned EXP on Ascend armor:
+Sit at the campfire (F) to gain power. Sitting faces the fire and plays the
+original GAMMA sit-down, seated-idle and stand-up clips; moving interrupts them. Spend earned EXP on Ascend armor:
 
 | Armor | EXP cost | Power per second |
 |---|---:|---:|

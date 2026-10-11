@@ -13,12 +13,12 @@ function makeClip(idle,bones){
     const bone=bones.find(b=>b.name===track.bone);if(!bone)throw Error('Missing idle bone '+track.bone);
     for(const [property,values,size,Type] of [['quaternion',track.rotations,4,THREE.QuaternionKeyframeTrack],['position',track.positions,3,THREE.VectorKeyframeTrack]]){
      const count=values.length/size,times=Array.from({length:count},(_,i)=>i/idle.fps),loopValues=values.slice();
-     if(count>1){times.push(idle.frames/idle.fps);loopValues.push(...values.slice(0,size));}
+     if(count>1&&idle.loop!==false){times.push(idle.frames/idle.fps);loopValues.push(...values.slice(0,size));}
      tracks.push(new Type(bone.uuid+'.'+property,times,loopValues));
     }
    }
 
- return new THREE.AnimationClip(idle.name,idle.frames/idle.fps,tracks);
+ return new THREE.AnimationClip(idle.name,(idle.frames-(idle.loop===false?1:0))/idle.fps,tracks);
 }
 export async function loadCharacters(resources,texture){
  const source=JSON.parse(new TextDecoder().decode(await resources.get('characters.json'))),templates={},idles=JSON.parse(new TextDecoder().decode(await resources.get('idle-clips.json'))),playerMotion=JSON.parse(new TextDecoder().decode(await resources.get('player-motion.json')));
@@ -36,43 +36,40 @@ export async function loadCharacters(resources,texture){
   template.bones.forEach((b,i)=>{const parent=template.bones.findIndex(p=>p.name===b.parent);(parent<0?model:bones[parent]).add(bones[i]);});
   root.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);
   for(const part of template.parts){const mesh=new THREE.SkinnedMesh(part.geometry,part.material);model.add(mesh);mesh.bind(skeleton);mesh.frustumCulled=false;}
-  // OMF enemy poses already face -Z after conversion; the procedural player
-  // uses its opposite-facing bind pose. Apply heading after binding.
-  model.rotation.y=idles[name]?0:Math.PI;
+  model.rotation.y=0;
   if(idles[name]){
    const idle=idles[name];
    const mixer=new THREE.AnimationMixer(model);mixer.clipAction(makeClip(idle,bones)).play();root.userData.idle=mixer;
   }
   if(name==='stalker'||name.startsWith('player_')){
    const mixer=new THREE.AnimationMixer(model),actions=Object.fromEntries(Object.entries(playerMotion).map(([state,clip])=>[state,mixer.clipAction(makeClip(clip,bones))]));
+   for(const key of ['sitDown','standUp']){actions[key].setLoop(THREE.LoopOnce,1);actions[key].clampWhenFinished=true;}
    root.userData.motion={mixer,actions,state:null,lastTime:null};
   }
-  root.userData.restPositions=bones.map(b=>b.position.clone());root.userData.bones=bones;root.userData.rest=bones.map(b=>b.quaternion.clone());
+  root.userData.bones=bones;
   return root;
  };
 }
 export function animateCharacter(root,time,moving,active,sitting=false){
  if(root.userData.idle){root.userData.idle.setTime(time/1000);return;}
- const {bones,rest,motion}=root.userData,model=root.children[0];model.position.y=sitting?-.5:0;
- if(motion){
-  const dt=motion.lastTime===null?0:Math.min(.1,Math.max(0,(time-motion.lastTime)/1000));motion.lastTime=time;
-  if(!sitting){
-   const speed=typeof moving==='number'?moving:(moving?4.8:0),state=locomotionState(speed,motion.state);
-   model.rotation.y=0;
-   if(state!==motion.state){const previous=motion.actions[motion.state],next=motion.actions[state];const phase=previous&&motion.state!=='idle'&&state!=='idle'?previous.time/previous.getClip().duration:0;
-    next.reset().setEffectiveWeight(1).play();next.time=phase*next.getClip().duration;if(previous)previous.crossFadeTo(next,.18,false);motion.state=state;}
-   motion.mixer.update(dt);return;
-  }
-  motion.mixer.stopAllAction();motion.state=null;model.rotation.y=Math.PI;
+ const {motion}=root.userData,model=root.children[0];
+ if(!motion)return;
+ const dt=motion.lastTime===null?0:Math.min(.1,Math.max(0,(time-motion.lastTime)/1000));motion.lastTime=time;
+ const speed=typeof moving==='number'?moving:(moving?4.8:0);
+ let state;
+ const finished=()=>motion.actions[motion.state].time>=motion.actions[motion.state].getClip().duration;
+ if(sitting){
+  state=motion.state==='sit'?'sit':motion.state==='sitDown'?(finished()?'sit':'sitDown'):'sitDown';
+ }else if(speed>.15){state=locomotionState(speed,motion.state);}
+ else if(motion.state==='sit'||motion.state==='sitDown'){state='standUp';}
+ else if(motion.state==='standUp'&&!finished()){state='standUp';}
+ else state='idle';
+ model.position.y=0;model.rotation.y=0;
+ if(state!==motion.state){
+  const previous=motion.actions[motion.state],next=motion.actions[state];
+  const stride=['walk','run'];const phase=previous&&stride.includes(motion.state)&&stride.includes(state)?previous.time/previous.getClip().duration:0;
+  next.reset().setEffectiveWeight(1).play();next.time=phase*next.getClip().duration;
+  if(previous)previous.crossFadeTo(next,.18,false);motion.state=state;
  }
-
- bones.forEach((bone,i)=>{
-  bone.position.copy(root.userData.restPositions[i]);bone.quaternion.copy(rest[i]);const name=bone.name.toLowerCase();
-  const side=/(_l_|left)/.test(name)?1:-1;
-  if(sitting&&/thigh/.test(name))bone.rotateX(-1.3);
-  if(sitting&&/calf/.test(name))bone.rotateX(1.3);
-  if(/upperarm/.test(name))bone.rotateZ(-side*.95);
-  if(/thigh|upperarm/.test(name)&&moving)bone.rotateX(Math.sin(time*.014+(side>0?0:Math.PI))*.4);
-  if(/forearm/.test(name))bone.rotateX(active?-.9:-.2);
- });
+ motion.mixer.update(dt);
 }
