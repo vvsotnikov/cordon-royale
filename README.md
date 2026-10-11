@@ -3,11 +3,13 @@
 A third-person browser progression game in the actual Anomaly Cordon map.
 One Rust server hosts a shared camp with up to 12 players.
 
-Power determines fight outcomes; EXP is a progression score only. Sit by the
+Power determines damage per click; EXP is a progression score only. Sit by the
 campfire (F) to gain one base power per second. Moving or jumping stands up.
 Weapons and armor add power while equipped. Approach an enemy and press E to
-fight it; the server selects the nearest enemy within 4.5 metres. Encounters
-resolve after three seconds, with power at least equal to the enemy winning.
+fight it; the server selects the nearest enemy within 4.5 metres. Click MOG or left-click the scene to attack. Each click deals total equipped power
+(minimum 1); enemy health is 10 times its listed power. Defeat it within 10 seconds
+to win. Waiting deals no damage. Retreat abandons the fight without rewards.
+The server accepts at most one attack per 50 ms simulation tick.
 
 Each enemy is a stage. The dog’s EXP marker is unlocked initially; defeating an
 enemy unlocks the following stage and its marker. Walk to a marker and click

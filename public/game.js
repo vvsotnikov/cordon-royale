@@ -47,6 +47,10 @@ $('openBox').onclick=()=>send({kind:'open_box'});
 function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();}
 $('inventoryToggle').onclick=toggleInventory;$('closeInventory').onclick=toggleInventory;
 $('challenge').onclick=()=>send({kind:'challenge'});
+function attack(){if(playing&&$('inventory').hidden&&state?.players.find(p=>p.id===id)?.duel!=null)send({kind:'attack'});}
+$('attack').onclick=attack;
+$('retreat').onclick=()=>send({kind:'retreat'});
+canvas.addEventListener('click',e=>{if(e.button===0)attack();});
 $('home').onclick=()=>send({kind:'home'});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('mousedown',e=>{canvas.focus();if(e.button===2)dragging=true;});
 document.addEventListener('mouseup',()=>{dragging=false;});
@@ -74,7 +78,7 @@ function updateUI(me){
  const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
  $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=me.sitting?'SITTING · +1 POWER / SECOND':'CAMPFIRE · SIT TO GAIN POWER';
  $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
- $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(1-me.duel_remaining/3)*100+'%';$('duelHint').textContent=`Your power ${total} / Enemy ${o.power}`;}
+ $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(me.duel_health/(o.power*10))*100+'%';$('duelHint').textContent=`${me.duel_health.toLocaleString()} / ${(o.power*10).toLocaleString()} HP · ${me.duel_remaining.toFixed(1)}s left`;$('attack').textContent=`MOG · ${Math.max(1,total).toLocaleString()} DAMAGE / CLICK`;}
  $('connection').textContent=`LIVE · ${state.players.length} STALKERS · AUTOSAVE`;updateInventory(me);
 }
 function nextEnemyUI(me){
