@@ -42,17 +42,28 @@ function connect(){
  ws.onerror=()=>notify('Cannot reach the room.');
 }
 $('deploy').onclick=connect;
-$('ascend').onclick=()=>{const me=state?.players.find(p=>p.id===id);if(me){send({kind:'ascend',tier:me.profile.ascension+1});$('ascend').disabled=true;}};
-let rebirthOffer=null;
-$('rebirth').onclick=()=>{
+let rebirthOffer=null,ascendOffer=null;
+function openUpgrade(dialog){
  const me=state?.players.find(p=>p.id===id);if(!me||me.duel!==null)return;
- const p=me.profile,base=state.armors[p.ascension].gain;
- rebirthOffer=p.rebirths+1;keys.clear();jumpQueued=false;send({kind:'input'});
- $('rebirthPreview').textContent=`Rebirth ${rebirthOffer}: ${p.power.toLocaleString()} trained power → 0. Campfire: ${(base*(10+p.rebirths)/10).toLocaleString()} → ${(base*(11+p.rebirths)/10).toLocaleString()} power/second.`;
- $('rebirthDialog').showModal();
-};
+ keys.clear();jumpQueued=false;dragging=false;send({kind:'input'});$('inventory').hidden=true;
+ rebirthOffer=me.profile.rebirths+1;ascendOffer=me.profile.ascension+1;
+ updateUI(me);$(dialog).showModal();
+}
+$('ascend').onclick=()=>openUpgrade('ascendDialog');
+$('rebirth').onclick=()=>openUpgrade('rebirthDialog');
+$('rebirthProgress').onclick=()=>openUpgrade('rebirthDialog');
+$('closeAscend').onclick=()=>$('ascendDialog').close();
 $('cancelRebirth').onclick=()=>$('rebirthDialog').close();
+$('confirmAscend').onclick=()=>{send({kind:'ascend',tier:ascendOffer});$('ascendDialog').close();};
 $('confirmRebirth').onclick=()=>{send({kind:'rebirth',rebirth:rebirthOffer});$('rebirthDialog').close();};
+const portraits=[];
+function createArmorPortraits(){
+ const r=new THREE.WebGLRenderer({alpha:true,antialias:true});r.setSize(256,256);r.outputColorSpace=THREE.SRGBColorSpace;
+ const stage=new THREE.Scene(),eye=new THREE.PerspectiveCamera(36,1,.1,10);eye.position.set(.6,1.15,-3.3);eye.lookAt(0,.95,0);
+ stage.add(new THREE.HemisphereLight(0xffffff,0x879280,3));const light=new THREE.DirectionalLight(0xffe9ce,3);light.position.set(-2,3,-4);stage.add(light);
+ for(let n=0;n<6;n++){const actor=createCharacter('player_'+n);animateCharacter(actor,0,0,false);stage.add(actor);r.render(stage,eye);portraits.push(r.domElement.toDataURL());stage.remove(actor);actor.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose();});}
+ r.dispose();
+}
 $('sit').onclick=()=>send({kind:'sit'});
 $('openBox').onclick=()=>send({kind:'open_box'});
 function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();}
@@ -67,7 +78,7 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventList
 document.addEventListener('mouseup',()=>{dragging=false;});
 document.addEventListener('mousemove',e=>{if(dragging){yaw-=e.movementX*.004;pitch=Math.max(-.1,Math.min(.8,pitch+e.movementY*.003));}});
 document.addEventListener('keydown',e=>{
- if(!playing||$('rebirthDialog').open||e.target instanceof HTMLInputElement)return;
+ if(!playing||$('rebirthDialog').open||$('ascendDialog').open||e.target instanceof HTMLInputElement)return;
  if(e.code==='Space'&&!e.repeat)jumpQueued=true;
  if(e.code==='KeyI'&&!e.repeat)toggleInventory();if(e.code==='Escape'){$('inventory').hidden=true;keys.clear();}
  if(!$('inventory').hidden)return;
@@ -89,8 +100,20 @@ function updateUI(me){
  const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} base + ${total-p.power} equipment`;$('exp').textContent=p.exp.toLocaleString();
  const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
  $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=`${me.sitting?'SITTING':'CAMPFIRE'} · +${(state.armors[p.ascension].gain*(10+p.rebirths)/10).toLocaleString()} POWER / SECOND`;
- const armor=state.armors[p.ascension],next=state.armors[p.ascension+1];$('armorStatus').textContent=armor.name.toUpperCase();$('ascendHint').textContent=next?`Next: ${next.name} · +${(next.gain*(10+p.rebirths)/10).toLocaleString()}/sec · ${Math.max(0,next.cost-p.exp)} more EXP needed`:'NOSOROG · MAXIMUM ARMOR TIER';$('ascend').hidden=!next;$('ascend').disabled=!next||p.exp<next.cost||me.duel!==null;$('ascend').textContent=next?`ASCEND · ${next.cost} EXP`:'';
- const requirement=100*(p.rebirths+1)**2;$('rebirthHint').textContent=`REBIRTHS ${p.rebirths} · ×${((10+p.rebirths)/10).toLocaleString()} training · ${p.power.toLocaleString()} / ${requirement.toLocaleString()} trained power`;$('rebirth').disabled=p.power<requirement||me.duel!==null||p.rebirths>=100000;$('rebirth').textContent=p.rebirths>=100000?'MAXIMUM REBIRTHS':'REBIRTH · PREVIEW';
+ const armor=state.armors[p.ascension],next=state.armors[p.ascension+1],multiplier=(10+p.rebirths)/10,rate=armor.gain*multiplier,requirement=100*(p.rebirths+1)**2,canRebirth=p.power>=requirement&&p.rebirths<100000;
+ $('armorStatus').textContent=armor.name.toUpperCase();$('rebirthCount').textContent=p.rebirths.toLocaleString();
+ $('ascendIcon').src=portraits[p.ascension];$('ascendBadge').textContent=next?(p.exp>=next.cost?'READY!':`${next.cost.toLocaleString()} EXP`):'MAX ARMOR';$('ascend').classList.toggle('ready',!!next&&p.exp>=next.cost);$('ascend').disabled=me.duel!==null;
+ $('lootBadge').textContent=p.lootboxes?`${p.lootboxes} LOOTBOX${p.lootboxes===1?'':'ES'}`:'Your equipment';
+ $('rebirthBadge').textContent=canRebirth?'READY!':`×${multiplier.toLocaleString()} training`;$('rebirth').classList.toggle('ready',canRebirth);$('rebirth').disabled=me.duel!==null;
+ $('rebirthHint').textContent=p.rebirths>=100000?'MAXIMUM REBIRTHS':canRebirth?'REBIRTH AVAILABLE!':`${p.power.toLocaleString()} / ${requirement.toLocaleString()} · TRAIN TO REBIRTH`;
+ $('rebirthFill').style.width=Math.min(100,p.power/requirement*100)+'%';$('rebirthProgress').classList.toggle('ready',canRebirth);
+ $('rebirthBefore').textContent=rate.toLocaleString();$('rebirthAfter').textContent=(armor.gain*(11+p.rebirths)/10).toLocaleString();$('rebirthMultiplierBefore').textContent=`×${multiplier.toLocaleString()} training`;$('rebirthMultiplierAfter').textContent=`×${((11+p.rebirths)/10).toLocaleString()} training`;
+ $('rebirthPreview').textContent=`${p.power.toLocaleString()} trained power → 0 · Requires ${requirement.toLocaleString()} trained power. Equipment does not count.`;
+ $('confirmRebirth').disabled=!canRebirth||me.duel!==null;$('confirmRebirth').textContent=p.rebirths>=100000?'MAXIMUM REBIRTHS':canRebirth?'RESET POWER & REBIRTH':`${(requirement-p.power).toLocaleString()} MORE POWER NEEDED`;
+ $('armorBeforeImage').src=portraits[p.ascension];$('armorBeforeName').textContent=armor.name;$('armorBeforeGain').textContent=`+${rate.toLocaleString()} power / sec`;
+ $('armorAfterImage').src=portraits[next?p.ascension+1:p.ascension];$('armorAfterName').textContent=next?.name||'Maximum armor';$('armorAfterGain').textContent=`+${((next||armor).gain*multiplier).toLocaleString()} power / sec`;
+ $('ascendHint').textContent=next?`${p.exp.toLocaleString()} / ${next.cost.toLocaleString()} EXP · ${Math.max(0,next.cost-p.exp).toLocaleString()} more needed`:'You have reached Nosorog exoskeleton.';
+ $('confirmAscend').disabled=!next||p.exp<next.cost||me.duel!==null;$('confirmAscend').textContent=next?`ASCEND · ${next.cost.toLocaleString()} EXP`:'MAXIMUM ARMOR';
  $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
  document.body.classList.toggle('fighting',me.duel!==null);
  $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`${p.name.toUpperCase()} VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(me.duel_progress*100)+'%';$('duelHint').textContent=`Your power ${total.toLocaleString()} · Opponent ${o.power.toLocaleString()}`;$('attack').textContent='CLICK TO MOG';}
@@ -195,7 +218,7 @@ async function loadWorld(){
  const textureCache=new Map();
  async function texture(name,linear=false){if(!textureCache.has(name))textureCache.set(name,(async()=>{const bytes=await resources.get('textures/'+name+'.dds'),url=URL.createObjectURL(new Blob([bytes]));try{const t=await dds.loadAsync(url);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=linear?THREE.NoColorSpace:THREE.SRGBColorSpace;t.anisotropy=4;return t;}finally{URL.revokeObjectURL(url);}})());return textureCache.get(name);}
  const sky=await texture('sky/sky_1_clouds_cube');sky.isCubeTexture=true;sky.mapping=THREE.CubeReflectionMapping;sky.wrapS=sky.wrapT=THREE.ClampToEdgeWrapping;scene.background=sky;
- createCharacter=await loadCharacters(resources,texture);
+ createCharacter=await loadCharacters(resources,texture);createArmorPortraits();
  const terrain=await Promise.all(['terrain/terrain_escape_mask','detail/detail_grnd_grass','detail/detail_asfalt_det1','detail/detail_earth_det1','detail/detail_grnd_pebbles'].map((n,i)=>texture(n,i===0)));
  const textureJobs=[];for(let index=0;index<info.meshes.length;index++){
   const m=info.meshes[index];const materialKey=m.texture+':'+Boolean(m.alpha);let material=materials.get(materialKey);if(!material){material=new THREE.MeshStandardMaterial({color:0xbabbb0,roughness:1,side:THREE.DoubleSide,alphaTest:m.alpha?.45:0});if(m.texture==='terrain/terrain_escape'){material.onBeforeCompile=shader=>{['groundMask','groundGrass','groundRoad','groundEarth','groundStones'].forEach((n,i)=>shader.uniforms[n]={value:terrain[i]});shader.fragmentShader='uniform sampler2D groundMask,groundGrass,groundRoad,groundEarth,groundStones;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
