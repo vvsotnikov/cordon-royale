@@ -16,3 +16,13 @@ assert.equal(player.userData.motion.state,'run');assert(Math.abs(run.time-((befo
 const phase=run.time/run.getClip().duration;animateCharacter(player,now,4.8,false);
 assert(Math.abs(player.userData.motion.actions.walk.time/player.userData.motion.actions.walk.getClip().duration-phase)<1e-5,'walk/run transition preserves stride');
 console.log('PASS running phase survives jitter and walk transitions');
+
+for(let tier=0;tier<6;tier++){
+ const actor=make('player_'+tier);
+ for(let i=0;i<90;i++){
+  animateCharacter(actor,i*16,7.4,false);actor.updateMatrixWorld(true);
+  const meshes=[];actor.traverse(o=>{if(o.isSkinnedMesh){o.computeBoundingBox();meshes.push(o)}});
+  for(const mesh of meshes){const size=mesh.boundingBox.getSize(new T.Vector3());assert(size.toArray().every(Number.isFinite));assert(size.y<3&&size.x<3&&size.z<3,'armor mesh must stay bound to animated skeleton');}
+ }
+}
+console.log('PASS all six Ascend armor models animate without exploding geometry');

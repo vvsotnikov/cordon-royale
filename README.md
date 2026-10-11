@@ -3,22 +3,34 @@
 A third-person browser progression game in the actual Anomaly Cordon map.
 One Rust server hosts a shared camp with up to 12 players.
 
-Power determines damage per click; EXP is a progression score only. Sit by the
-campfire (F) to gain one base power per second. Moving or jumping stands up.
-Weapons and armor add power while equipped. Approach an enemy and press E to
-fight it; the server selects the nearest enemy within 4.5 metres. Click MOG or left-click the scene to attack. Each click deals total equipped power
-(minimum 1); enemy health is 10 times its listed power. Defeat it within 10 seconds
-to win. Waiting deals no damage. Retreat abandons the fight without rewards.
-The server accepts at most one attack per 50 ms simulation tick.
+Power determines how far each click pushes the fight meter. Approach an enemy and
+press E, then click to push toward victory while the opponent pushes back.
+There is no fixed fight deadline. Retreat earns no reward. The server accepts
+at most one attack per simulation tick; client-supplied damage is ignored.
 
-Each enemy is a stage. The dog’s EXP marker is unlocked initially; defeating an
-enemy unlocks the following stage and its marker. Walk to a marker and click
-“Get X EXP” (or R) to collect 1/5/25/100/500 EXP and return to camp. Claims are
-repeatable, require proximity, and preserve power and inventory. Each victory
-has a 5% chance to award a lootbox. Open boxes in inventory, then equip the weapon
-or armor. Boxes prefer unowned equipment; a completed collection yields duplicates.
-There are no purchases, practice clicks or promotions. Existing saves keep power,
-equipment and defeated enemies; EXP and unopened boxes start at zero.
+Sit at the campfire (F) to gain power. Spend earned EXP on Ascend armor:
+
+| Armor | EXP cost | Power per second |
+|---|---:|---:|
+| No armor | — | 1 |
+| Leather jacket | 5 | 3 |
+| Sunrise suit | 25 | 10 |
+| SEVA suit | 100 | 35 |
+| Exoskeleton | 500 | 100 |
+| Nosorog exoskeleton | 2,000 | 300 |
+
+Costs are for each successive upgrade. Ascending changes the character model
+without resetting power, equipment or stage wins. New lootboxes contain weapons;
+armor equipment from older saves retains its flat combat bonus independently of
+Ascend armor, which controls appearance and training speed.
+
+Each enemy is a stage. Defeating an enemy unlocks the next stage and its EXP
+marker for this run. The dog's 1 EXP marker also requires a dog victory. Return
+markers award 1/5/25/100/500 EXP; clearing all five enemies upgrades the last
+marker to 2,500 EXP. Claiming returns to camp and clears current-run wins.
+Lifetime trophies, power, equipment, Ascend armor and unspent EXP are retained.
+Leaving and reconnecting preserves the current run. Old saves begin a fresh run.
+The first victory over each enemy in a run has a 5% weapon lootbox chance.
 
 ## Run
 

@@ -43,7 +43,7 @@ export async function loadCharacters(resources,texture){
    const idle=idles[name];
    const mixer=new THREE.AnimationMixer(model);mixer.clipAction(makeClip(idle,bones)).play();root.userData.idle=mixer;
   }
-  if(name==='stalker'){
+  if(name==='stalker'||name.startsWith('player_')){
    const mixer=new THREE.AnimationMixer(model),actions=Object.fromEntries(Object.entries(playerMotion).map(([state,clip])=>[state,mixer.clipAction(makeClip(clip,bones))]));
    root.userData.motion={mixer,actions,state:null,lastTime:null};
   }

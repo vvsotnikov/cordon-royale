@@ -20,7 +20,7 @@ let token;try{token=localStorage.getItem('cordon-profile');if(!/^[a-f0-9]{64}$/.
 function send(v){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(v));}
 function notify(text){$('notification').textContent=text;noticeUntil=performance.now()+5000;}
 function sound(win=false){if(!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=win?660:220;g.gain.setValueAtTime(.035,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.18);o.connect(g).connect(audio.destination);o.start();o.stop(audio.currentTime+.18);}
-function stalker(){const root=createCharacter('stalker');scene.add(root);return root;}
+function stalker(tier){const root=createCharacter(state.armors[tier].model);root.userData.tier=tier;scene.add(root);return root;}
 function mutant(species){const root=createCharacter(species);scene.add(root);return root;}
 function label(text,color='#e0edc1'){
  const c=document.createElement('canvas');c.width=512;c.height=96;const ctx=c.getContext('2d');ctx.fillStyle='#10201cdd';ctx.fillRect(0,0,512,96);ctx.fillStyle=color;ctx.textAlign='center';ctx.font='bold 30px monospace';ctx.fillText(text,256,58);
@@ -42,6 +42,7 @@ function connect(){
  ws.onerror=()=>notify('Cannot reach the room.');
 }
 $('deploy').onclick=connect;
+$('ascend').onclick=()=>{const me=state?.players.find(p=>p.id===id);if(me){send({kind:'ascend',tier:me.profile.ascension+1});$('ascend').disabled=true;}};
 $('sit').onclick=()=>send({kind:'sit'});
 $('openBox').onclick=()=>send({kind:'open_box'});
 function toggleInventory(){const panel=$('inventory');panel.hidden=!panel.hidden;keys.clear();}
@@ -65,26 +66,29 @@ document.addEventListener('keydown',e=>{
  if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)){keys.add(e.code);e.preventDefault();}
 });
 document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();dragging=false;});
-let nearestExp=-1,campVisual;const stageButtons=[];
-function unlocked(p,n){return n===0||p.trophies.includes(n-1);}
+let nearestExp=-1,campVisual,fightView=null,fightOcclusionAt=0;const fightOccluders=[];const stageButtons=[];
+function unlocked(p,n){return n===0||p.run_wins.includes(n-1);}
 function updateInventory(me){
- const p=me.profile,key=JSON.stringify([p.inventory,p.lootboxes,p.weapon,p.armor,me.duel]);if(profileKey===key)return;profileKey=key;
- $('equipment').textContent=`WEAPON: ${state.items[p.weapon].name} / ARMOR: ${state.items[p.armor].name}`;
+ const p=me.profile,key=JSON.stringify([p.inventory,p.lootboxes,p.weapon,p.armor,p.ascension,me.duel]);if(profileKey===key)return;profileKey=key;
+ $('equipment').textContent=`ASCEND ARMOR: ${state.armors[p.ascension].name} / WEAPON: ${state.items[p.weapon].name} / LEGACY BONUS: +${state.items[p.armor].power}`;
  $('openBox').textContent=`OPEN LOOTBOX · ${p.lootboxes} AVAILABLE`;$('openBox').disabled=!p.lootboxes||me.duel!==null;
- $('items').replaceChildren();state.items.forEach((item,n)=>{const owned=p.inventory.includes(n),equipped=n===p.weapon||n===p.armor,card=document.createElement('div');card.className='item'+(equipped?' equipped':'');const title=document.createElement('b'),desc=document.createElement('small'),button=document.createElement('button');title.textContent=item.name;desc.textContent=`${item.slot.toUpperCase()} · +${item.power} power`;button.textContent=equipped?'EQUIPPED':owned?'EQUIP':'FOUND IN LOOTBOXES';button.disabled=!owned||equipped||me.duel!==null;button.onclick=()=>send({kind:'equip',item:n});card.append(title,desc,button);$('items').append(card);});
+ $('items').replaceChildren();state.items.forEach((item,n)=>{if(item.slot==='armor'&&(!p.inventory.includes(n)||item.power===0))return;const owned=p.inventory.includes(n),equipped=n===p.weapon||n===p.armor,card=document.createElement('div');card.className='item'+(equipped?' equipped':'');const title=document.createElement('b'),desc=document.createElement('small'),button=document.createElement('button');title.textContent=(item.slot==='armor'?'Legacy ':'')+item.name;desc.textContent=`${item.slot.toUpperCase()} · +${item.power} power`;button.textContent=equipped?'EQUIPPED':owned?'EQUIP':'FOUND IN LOOTBOXES';button.disabled=!owned||equipped||me.duel!==null;button.onclick=()=>send({kind:'equip',item:n});card.append(title,desc,button);$('items').append(card);});
 }
+function rewardUnlocked(p,n){return unlocked(p,n)&&p.run_wins.length>0;}
 function updateUI(me){
  const p=me.profile,total=strength(p);$('power').textContent=total.toLocaleString();$('breakdown').textContent=`${p.power} base + ${total-p.power} equipment`;$('exp').textContent=p.exp.toLocaleString();
  const nearFire=Math.hypot(...state.campfire.map((v,i)=>v-me.pos[i]))<=3.5;
- $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=me.sitting?'SITTING · +1 POWER / SECOND':'CAMPFIRE · SIT TO GAIN POWER';
+ $('sit').disabled=(!nearFire&&!me.sitting)||me.duel!==null;$('sit').textContent=me.sitting?'STAND UP [F]':nearFire?'SIT BY FIRE [F]':'APPROACH CAMPFIRE';$('campStatus').textContent=`${me.sitting?'SITTING':'CAMPFIRE'} · +${state.armors[p.ascension].gain} POWER / SECOND`;
+ const armor=state.armors[p.ascension],next=state.armors[p.ascension+1];$('armorStatus').textContent=armor.name.toUpperCase();$('ascendHint').textContent=next?`Next: ${next.name} · +${next.gain}/sec · ${Math.max(0,next.cost-p.exp)} more EXP needed`:'NOSOROG · MAXIMUM ARMOR TIER';$('ascend').hidden=!next;$('ascend').disabled=!next||p.exp<next.cost||me.duel!==null;$('ascend').textContent=next?`ASCEND · ${next.cost} EXP`:'';
  $('challenge').hidden=selected<0;$('challenge').disabled=me.duel!==null||(selected>=0&&!unlocked(p,selected));if(selected>=0)$('challenge').textContent=unlocked(p,selected)?`E TO FIGHT · ${state.opponents[selected].name.toUpperCase()}`:'DEFEAT PREVIOUS STAGE FIRST';
- $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(me.duel_health/(o.power*10))*100+'%';$('duelHint').textContent=`${me.duel_health.toLocaleString()} / ${(o.power*10).toLocaleString()} HP · ${me.duel_remaining.toFixed(1)}s left`;$('attack').textContent=`MOG · ${Math.max(1,total).toLocaleString()} DAMAGE / CLICK`;}
+ document.body.classList.toggle('fighting',me.duel!==null);
+ $('duelPanel').hidden=me.duel===null;if(me.duel!==null){const o=state.opponents[me.duel];$('duelTitle').textContent=`${p.name.toUpperCase()} VS ${o.name.toUpperCase()}`;$('duelBar').style.width=(me.duel_progress*100)+'%';$('duelHint').textContent=`Your power ${total.toLocaleString()} · Opponent ${o.power.toLocaleString()}`;$('attack').textContent='CLICK TO MOG';}
  $('connection').textContent=`LIVE · ${state.players.length} STALKERS · AUTOSAVE`;updateInventory(me);
 }
 function nextEnemyUI(me){
- const n=state.opponents.findIndex((_,i)=>!me.profile.trophies.includes(i));
+ const n=state.opponents.findIndex((_,i)=>!me.profile.run_wins.includes(i));
  $('enemyArrow').style.display=n<0?'none':'';
- if(n<0){$('enemyDirectionLabel').textContent='ALL STAGES DEFEATED';return;}
+ if(n<0){$('enemyDirectionLabel').textContent='RUN CLEARED · CLAIM EXP TO ASCEND';return;}
  const o=state.opponents[n],actor=actors.get(id).position,dx=o.pos[0]-actor.x,dz=o.pos[2]-actor.z;
  const right=dx*Math.cos(yaw)-dz*Math.sin(yaw),forward=-dx*Math.sin(yaw)-dz*Math.cos(yaw);
  $('enemyArrow').style.transform=`rotate(${Math.atan2(right,forward)}rad)`;
@@ -94,8 +98,9 @@ function stageUI(me){
  nearestExp=-1;let best=Infinity;
  state.opponents.forEach((o,n)=>{
   let button=stageButtons[n];if(!button){button=document.createElement('button');button.className='stage-exp';button.onclick=()=>send({kind:'claim_exp',stage:n});$('stageMarkers').append(button);stageButtons[n]=button;}
-  const point=new THREE.Vector3(...o.reward_pos).add(new THREE.Vector3(0,.8,0)),distance=point.clone().add(new THREE.Vector3(0,-.8,0)).distanceTo(new THREE.Vector3(...me.pos)),available=unlocked(me.profile,n);
-  button.textContent=available?`GET ${o.exp} EXP · ${distance<=2.5?'[R]':Math.ceil(distance)+'m'}`:`🔒 ${o.exp} EXP · DEFEAT ${state.opponents[n-1].name.toUpperCase()}`;button.disabled=!available||distance>2.5||me.duel!==null;
+  const point=new THREE.Vector3(...o.reward_pos).add(new THREE.Vector3(0,.8,0)),distance=point.clone().add(new THREE.Vector3(0,-.8,0)).distanceTo(new THREE.Vector3(...me.pos)),available=rewardUnlocked(me.profile,n);
+  const reward=n===4&&me.profile.run_wins.length===5?2500:o.exp;
+  button.textContent=available?`GET ${reward} EXP · ${distance<=2.5?'[R]':Math.ceil(distance)+'m'}`:`🔒 ${o.exp} EXP · DEFEAT ${state.opponents[Math.max(0,n-1)].name.toUpperCase()}`;button.disabled=!available||distance>2.5||me.duel!==null;
   if(!button.disabled&&distance<best){best=distance;nearestExp=n;}
   point.project(camera);button.hidden=point.z>1||point.z< -1||Math.abs(point.x)>1||Math.abs(point.y)>1||distance>18;button.style.left=(point.x*.5+.5)*innerWidth+'px';button.style.top=(-point.y*.5+.5)*innerHeight+'px';
  });
@@ -115,27 +120,56 @@ function frame(now){
   if(now-inputAt>45){inputAt=now;send({kind:'input',forward:Number(keys.has('KeyW'))-Number(keys.has('KeyS')),right:Number(keys.has('KeyD'))-Number(keys.has('KeyA')),yaw,sprint:keys.has('ShiftLeft'),jump:keys.has('Space')||jumpQueued});jumpQueued=false;}
   if(!campVisual)makeCamp();
   selected=-1;let closest=4.5;state.opponents.forEach((o,n)=>{const d=Math.hypot(...o.pos.map((v,i)=>v-me.pos[i]));if(d<=closest){closest=d;selected=n;}});
-  const present=new Set();for(const p of state.players){present.add(p.id);let actor=actors.get(p.id);if(!actor){actor=stalker();actors.set(p.id,actor);actor.position.fromArray(p.pos);const tag=label(p.profile.name);tag.position.y=2.15;tag.visible=p.id!==id;actor.add(tag);}
+  const present=new Set();for(const p of state.players){present.add(p.id);let actor=actors.get(p.id);if(actor&&actor.userData.tier!==p.profile.ascension){scene.remove(actor);actor.traverse(o=>{if(o.isSprite){o.material.map?.dispose();o.material.dispose();}});actor=null;}if(!actor){actor=stalker(p.profile.ascension);actors.set(p.id,actor);actor.position.fromArray(p.pos);const tag=label(p.profile.name);tag.position.y=2.15;tag.visible=p.id!==id;actor.add(tag);}
    const previousX=actor.position.x,previousZ=actor.position.z;actor.position.lerp(new THREE.Vector3(...p.pos),1-Math.exp(-dt*18));actor.rotation.y=p.yaw;
    const data=actor.userData,dx=actor.position.x-previousX,dz=actor.position.z-previousZ;
    data.movement??=new MovementSample();data.speed=data.movement.update(p.pos,state.time);
    if(data.speed>.2)actor.rotation.y=Math.atan2(-dx,-dz);
    animateCharacter(actor,now,data.speed,p.duel!==null,p.sitting);
-   if(p.duel!==null){const o=state.opponents[p.duel];actor.rotation.y=Math.atan2(-(o.pos[0]-p.pos[0]),-(o.pos[2]-p.pos[2]));
-    if(now-(data.lastShot||0)>300){data.lastShot=now;const geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...p.pos).add(new THREE.Vector3(0,1.15,0)),new THREE.Vector3(...o.pos).add(new THREE.Vector3(0,o.species==='dog'?.5:1.1,0))]);const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color:0xffd786,transparent:true,opacity:.8}));scene.add(line);tracers.push({line,until:now+70});if(p.id===id)sound();}
+   if(p.duel!==null){const o=state.opponents[p.duel];actor.rotation.y=Math.atan2(-(o.pos[0]-p.pos[0]),-(o.pos[2]-p.pos[2]));}
+   if(data.attackSeq!==undefined&&data.attackSeq!==p.attack_seq&&p.attack_target!==null){
+    const o=state.opponents[p.attack_target];data.lastShot=now;
+    const geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...p.pos).add(new THREE.Vector3(0,1.15,0)),new THREE.Vector3(...o.pos).add(new THREE.Vector3(0,o.species==='dog'?.5:1.1,0))]);
+    const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color:0xffd786,transparent:true,opacity:.8}));scene.add(line);tracers.push({line,until:now+100});if(p.id===id)sound();
    }
+   data.attackSeq=p.attack_seq;
   }
   for(const [key,actor] of actors)if(!present.has(key)){scene.remove(actor);actor.traverse(o=>{if(o.isSprite){o.material.map?.dispose();o.material.dispose();}});actors.delete(key);}
-  state.opponents.forEach((o,n)=>{if(!enemies[n]){const actor=mutant(o.species);actor.position.fromArray(o.pos);const tag=label(`${o.name} · ${o.power}`);tag.position.y=o.species==='dog'?1.5:2.3;actor.add(tag);const ring=new THREE.Mesh(new THREE.RingGeometry(.8,1,40),new THREE.MeshBasicMaterial({color:0xd8f071,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.06;actor.add(ring);actor.userData.ring=ring;enemies[n]=actor;}
-   const enemy=enemies[n];animateCharacter(enemy,now,false,state.players.some(p=>p.duel===n));enemy.userData.ring.visible=n===selected;enemy.rotation.y=Math.atan2(-(me.pos[0]-o.pos[0]),-(me.pos[2]-o.pos[2]));const battling=state.players.some(p=>p.duel===n);enemy.position.y=o.pos[1]+(battling?Math.abs(Math.sin(now*.016))*.12:0);
+  state.opponents.forEach((o,n)=>{if(!enemies[n]){const actor=mutant(o.species);actor.position.fromArray(o.pos);const tag=label(`${o.name} · ${o.power}`);tag.position.y=o.species==='dog'?1.5:2.3;actor.add(tag);actor.userData.label=tag;const ring=new THREE.Mesh(new THREE.RingGeometry(.8,1,40),new THREE.MeshBasicMaterial({color:0xd8f071,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.06;actor.add(ring);actor.userData.ring=ring;enemies[n]=actor;}
+   const enemy=enemies[n];enemy.userData.label.visible=me.duel===null;animateCharacter(enemy,now,false,state.players.some(p=>p.duel===n));enemy.userData.ring.visible=n===selected;enemy.rotation.y=Math.atan2(-(me.pos[0]-o.pos[0]),-(me.pos[2]-o.pos[2]));const hit=state.players.some(p=>p.attack_target===n&&now-(actors.get(p.id)?.userData.lastShot??-1000)<180);enemy.position.y=o.pos[1]+(hit?.12:0);
   });
-  followCamera.target(actors.get(id).position,yaw,pitch,dt);
+  let fightFocus=null,fightYaw=yaw,fightPitch=pitch;
+  if(me.duel!==null){
+   const target=new THREE.Vector3(...state.opponents[me.duel].pos),player=actors.get(id).position;fightFocus=player.clone().lerp(target,.5);
+   if(!fightView||fightView.stage!==me.duel){
+    const d=target.clone().sub(player),side=Math.atan2(-d.z,d.x),pivot=fightFocus.clone().add(new THREE.Vector3(0,1.4,0));
+    const nearby=staticMeshes.filter(m=>m.geometry.boundingSphere.center.distanceTo(pivot)<m.geometry.boundingSphere.radius+10);
+    let best=-1;for(const angle of [side,side+Math.PI,side+.6,side+Math.PI-.6])for(const tilt of [.35,.7]){
+     const direction=new THREE.Vector3(Math.sin(angle)*Math.cos(tilt),Math.sin(tilt),Math.cos(angle)*Math.cos(tilt));raycaster.set(pivot,direction);raycaster.far=6;
+     const hit=raycaster.intersectObjects(nearby,false),clear=hit.length?hit[0].distance:6;
+     if(clear>best){best=clear;fightView={stage:me.duel,yaw:angle,pitch:tilt};}
+    }
+   }
+   fightYaw=fightView.yaw;fightPitch=fightView.pitch;
+  }else fightView=null;
+  followCamera.target(fightFocus||actors.get(id).position,fightYaw,fightPitch,dt);
   const focus=followCamera.focus;
   if(now-cameraAt>100||broadPhaseCenter.distanceTo(focus)>1){cameraAt=now;broadPhaseCenter.copy(focus);cameraMeshes=staticMeshes.filter(m=>m.userData.cameraSolid&&m.geometry.boundingSphere.center.distanceTo(focus)<m.geometry.boundingSphere.radius+8);}
   raycaster.set(focus,followCamera.direction);raycaster.far=6;
   const hits=raycaster.intersectObjects(cameraMeshes,false);
   followCamera.place(camera,hits.length?hits[0].distance-.2:6,dt);
   actors.get(id).visible=followCamera.distance>.8;
+  if(me.duel===null||now-fightOcclusionAt>150){
+   for(const mesh of fightOccluders)mesh.visible=true;fightOccluders.length=0;fightOcclusionAt=now;
+   if(me.duel!==null){
+    const foliage=staticMeshes.filter(m=>!m.userData.cameraSolid&&m.geometry.boundingSphere.center.distanceTo(camera.position)<m.geometry.boundingSphere.radius+12);
+    const enemy=state.opponents[me.duel];
+    for(const point of [actors.get(id).position.clone().add(new THREE.Vector3(0,1,0)),new THREE.Vector3(...enemy.pos).add(new THREE.Vector3(0,enemy.species==='dog'?.4:1,0))]){
+     const direction=point.sub(camera.position);raycaster.far=direction.length();raycaster.set(camera.position,direction.normalize());
+     for(const hit of raycaster.intersectObjects(foliage,false)){hit.object.visible=false;fightOccluders.push(hit.object);}
+    }
+   }
+  }
   nextEnemyUI(me);
   stageUI(me);
   if(now-lastUi>200){lastUi=now;updateUI(me);}

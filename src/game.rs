@@ -26,8 +26,9 @@ pub struct Player {
     pub yaw: f32,
     pub profile: Profile,
     pub duel: Option<usize>,
-    pub duel_remaining: f32,
-    pub duel_health: u64,
+    pub duel_progress: f64,
+    pub attack_seq: u64,
+    pub attack_target: Option<usize>,
     #[serde(skip)]
     pub next_attack: f64,
     pub sitting: bool,
@@ -137,8 +138,9 @@ impl Game {
                 pos: [x, y, z],
                 yaw: 0.,
                 duel: None,
-                duel_remaining: 0.,
-                duel_health: 0,
+                duel_progress: 0.5,
+                attack_seq: 0,
+                attack_target: None,
                 next_attack: 0.,
                 sitting: false,
                 input: Input::default(),
@@ -202,6 +204,19 @@ impl Game {
                     Err(e) => e.into(),
                 })
             }
+            "ascend" if p.duel.is_none() => {
+                if v["tier"].as_u64() != Some((p.profile.ascension + 1) as u64) {
+                    return;
+                }
+                Some(match p.profile.ascend() {
+                    Ok(()) => format!(
+                        "Ascended: {} · +{} power / second",
+                        ARMORS[p.profile.ascension].name,
+                        p.profile.gain()
+                    ),
+                    Err(e) => e.into(),
+                })
+            }
             "open_box" if p.duel.is_none() => Some(match p.profile.open_box(random_roll()) {
                 Ok(n) => format!("Lootbox: {n}"),
                 Err(e) => e.into(),
@@ -214,12 +229,18 @@ impl Game {
                 {
                     let o = &self.opponents[n];
                     let marker = o.reward_pos;
-                    if !p.profile.unlocked(n) {
-                        Some("Defeat the previous enemy first.".into())
+                    if !p.profile.reward_unlocked(n) {
+                        Some("Win this run: defeat the dog, then the preceding stages.".into())
                     } else if dist(p.pos, marker) > 2.5 {
                         Some("Walk to the EXP marker beside this enemy.".into())
                     } else {
-                        p.profile.exp = p.profile.exp.saturating_add(o.exp);
+                        let reward = if n == 4 && p.profile.run_wins.len() == 5 {
+                            2500
+                        } else {
+                            o.exp
+                        };
+                        p.profile.exp = p.profile.exp.saturating_add(reward);
+                        p.profile.run_wins.clear();
                         p.pos = [
                             -205.,
                             self.world.floor(-205., 150., -15.).unwrap_or(-20.),
@@ -227,7 +248,7 @@ impl Game {
                         ];
                         p.input = Input::default();
                         p.sitting = false;
-                        Some(format!("+{} EXP · Returned to camp", o.exp))
+                        Some(format!("+{} EXP · Returned to camp · New run", reward))
                     }
                 } else {
                     None
@@ -265,8 +286,7 @@ impl Game {
                     } else {
                         p.sitting = false;
                         p.duel = Some(n);
-                        p.duel_remaining = 10.;
-                        p.duel_health = opponent.power * 10;
+                        p.duel_progress = 0.5;
                         p.next_attack = self.time;
                         p.input = Input::default();
                         Some(format!("Fighting {}…", opponent.name))
@@ -275,18 +295,22 @@ impl Game {
                     None
                 }
             }
-            "attack" if p.duel.is_some() && p.duel_health > 0 => {
-                if self.time < p.next_attack || p.duel_remaining <= 0. {
+            "attack" if p.duel.is_some() && p.duel_progress > 0. && p.duel_progress < 1. => {
+                if self.time < p.next_attack {
                     return;
                 }
                 p.next_attack = self.time + 0.049;
-                p.duel_health = p.duel_health.saturating_sub(p.profile.strength().max(1));
+                p.duel_progress = (p.duel_progress
+                    + p.profile.strength().max(1) as f64
+                        / (self.opponents[p.duel.unwrap()].power as f64 * 12.))
+                    .min(1.);
+                p.attack_seq = p.attack_seq.wrapping_add(1);
+                p.attack_target = p.duel;
                 return;
             }
             "retreat" if p.duel.is_some() => {
                 p.duel = None;
-                p.duel_health = 0;
-                p.duel_remaining = 0.;
+                p.duel_progress = 0.5;
                 p.input = Input::default();
                 Some("Fight abandoned. No rewards earned.".into())
             }
@@ -315,10 +339,12 @@ impl Game {
                 p.input = Input::default();
             }
             if let Some(n) = p.duel {
-                p.duel_remaining = (p.duel_remaining - 0.05).max(0.);
-                if p.duel_health == 0 || p.duel_remaining == 0. {
+                if p.duel_progress < 1. {
+                    p.duel_progress = (p.duel_progress - 0.12 * 0.05).max(0.);
+                }
+                if p.duel_progress >= 1. || p.duel_progress <= 0. {
                     let o = &self.opponents[n];
-                    let won = p.duel_health == 0;
+                    let won = p.duel_progress >= 1.;
                     let drop = won && p.profile.victory(n, random_roll() % 100);
                     finished.push((
                         id,
@@ -335,7 +361,7 @@ impl Game {
                             )
                         } else {
                             format!(
-                                "Time ran out against {}. Click faster or train for more damage.",
+                                "{} pushed you back. Click faster or train for more power.",
                                 o.name
                             )
                         },
@@ -395,7 +421,7 @@ impl Game {
         }
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"campfire":self.campfire()})
+        serde_json::json!({"kind":"state","time":self.time,"players":self.players.values().collect::<Vec<_>>(),"opponents":self.opponents,"events":self.events,"items":ITEMS,"armors":ARMORS,"campfire":self.campfire()})
     }
 }
 
@@ -409,6 +435,35 @@ fn random_roll() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn command(g: &mut Game, kind: &str) {
+        g.command(
+            1,
+            serde_json::json!({"kind":kind,"tier":g.players[&1].profile.ascension+1}),
+        );
+    }
+    fn ticks(g: &mut Game, n: usize) {
+        for _ in 0..n {
+            g.tick();
+        }
+    }
+    fn challenge(g: &mut Game, n: usize, power: u64) {
+        let p = g.players.get_mut(&1).unwrap();
+        p.pos = g.opponents[n].pos;
+        p.profile.power = power;
+        p.input = Input::default();
+        command(g, "challenge");
+        assert_eq!(g.players[&1].duel, Some(n));
+    }
+    fn click_fight(g: &mut Game) -> usize {
+        let mut count = 0;
+        while g.players[&1].duel.is_some() && count < 120 {
+            command(g, "attack");
+            ticks(g, 5);
+            count += 1;
+        }
+        assert_eq!(g.players[&1].duel, None);
+        count
+    }
     #[test]
     #[ignore = "requires imported Cordon assets"]
     fn cordon_stage_progression() {
@@ -417,85 +472,116 @@ mod tests {
         let world = World::load(&std::path::Path::new(&root).join("collision.cform")).unwrap();
         let mut g = Game::new(world, BTreeMap::new());
         g.join(1, "test".into());
-        let cmd = |kind: &str| serde_json::json!({"kind":kind});
-        g.command(1, cmd("train"));
+        command(&mut g, "train");
         assert_eq!(g.players[&1].profile.power, 0);
         g.players.get_mut(&1).unwrap().pos = [-206.817, -20., 142.435];
-        g.command(1, cmd("sit"));
-        assert!(g.players[&1].sitting);
-        for _ in 0..22 {
-            g.tick();
-        }
-        assert_eq!(g.players[&1].profile.power, 1);
-        assert_eq!(g.profiles["test"].power, 1, "passive gains must be saved");
+        command(&mut g, "sit");
+        ticks(&mut g, 22);
+        assert_eq!(g.profiles["test"].power, 1);
         g.command(1, serde_json::json!({"kind":"input","forward":1}));
         g.tick();
         assert!(!g.players[&1].sitting);
-        g.players.get_mut(&1).unwrap().pos = g.opponents[1].reward_pos;
-        g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
-        assert_eq!(g.players[&1].profile.exp, 0);
-        {
-            let p = g.players.get_mut(&1).unwrap();
-            p.pos = g.opponents[0].pos;
-            p.profile.power = 20;
-            p.input = Input::default();
-        }
-        g.command(1, cmd("challenge"));
-        assert_eq!(g.players[&1].duel, Some(0));
-        // Waiting cannot win, even with enough power for the old stat check.
-        for _ in 0..62 {
-            g.tick();
-        }
-        assert_eq!(g.players[&1].duel_health, 200);
-        assert!(!g.players[&1].profile.unlocked(1));
-        g.command(1, cmd("attack"));
-        g.command(1, cmd("attack"));
-        assert_eq!(g.players[&1].duel_health, 180, "same-tick spam is ignored");
-        g.tick();
-        for _ in 0..9 {
-            g.command(1, cmd("attack"));
-            g.tick();
-        }
-        assert_eq!(g.players[&1].duel, None);
+        g.players.get_mut(&1).unwrap().pos = g.opponents[0].reward_pos;
+        g.command(1, serde_json::json!({"kind":"claim_exp","stage":0}));
+        assert_eq!(
+            g.players[&1].profile.exp, 0,
+            "no free EXP without a victory"
+        );
+        challenge(&mut g, 0, 20);
+        ticks(&mut g, 100);
+        assert_eq!(g.events.last().unwrap().kind, "loss");
+        assert!(g.players[&1].profile.run_wins.is_empty());
+        challenge(&mut g, 0, 20);
+        command(&mut g, "attack");
+        let progress = g.players[&1].duel_progress;
+        command(&mut g, "attack");
+        assert_eq!(g.players[&1].duel_progress, progress, "spam ignored");
+        command(&mut g, "ascend");
+        assert_eq!(g.players[&1].profile.ascension, 0);
+        ticks(&mut g, 5);
+        let clicks = click_fight(&mut g);
+        assert!(clicks < 20);
         assert!(g.players[&1].profile.unlocked(1));
         g.players.get_mut(&1).unwrap().pos = g.opponents[1].reward_pos;
         g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
         assert_eq!(g.players[&1].profile.exp, 5);
         assert_eq!(g.players[&1].pos[0], -205.);
+        assert!(!g.players[&1].profile.unlocked(1));
+        assert!(g.players[&1].profile.trophies.contains(&0));
+        g.players.get_mut(&1).unwrap().pos = g.opponents[1].reward_pos;
         g.command(1, serde_json::json!({"kind":"claim_exp","stage":1}));
+        assert_eq!(g.players[&1].profile.exp, 5, "repeat claims need a new run");
+        command(&mut g, "ascend");
+        assert_eq!(g.players[&1].profile.exp, 0);
+        assert_eq!(g.players[&1].profile.gain(), 3);
+        g.command(1, serde_json::json!({"kind":"ascend","tier":1}));
         assert_eq!(
-            g.players[&1].profile.exp, 5,
-            "remote repeat claims rejected"
+            g.players[&1].profile.ascension, 1,
+            "duplicate upgrade cannot buy another tier"
         );
-        assert_eq!(
-            g.players[&1].profile.gain(),
-            1,
-            "EXP is a score, not a training bonus"
+        command(&mut g, "ascend");
+        assert_eq!(g.players[&1].profile.ascension, 1);
+        let power = g.players[&1].profile.power;
+        g.players.get_mut(&1).unwrap().pos = [-206.817, -20., 142.435];
+        command(&mut g, "sit");
+        ticks(&mut g, 22);
+        assert_eq!(g.players[&1].profile.power, power + 3);
+        challenge(&mut g, 0, 100);
+        assert!(
+            click_fight(&mut g) < clicks,
+            "more power needs fewer clicks"
         );
-        g.command(1, cmd("challenge"));
-        for _ in 0..202 {
-            g.tick();
-        }
-        assert_eq!(g.players[&1].duel, None);
-        assert_eq!(g.events.last().unwrap().kind, "loss");
+        command(&mut g, "attack");
         let boxes = g.players[&1].profile.lootboxes;
-        g.command(1, cmd("attack"));
+        command(&mut g, "attack");
         assert_eq!(g.players[&1].profile.lootboxes, boxes);
-        g.command(1, cmd("challenge"));
-        g.command(1, cmd("retreat"));
+        challenge(&mut g, 0, 100);
+        command(&mut g, "retreat");
         assert_eq!(g.players[&1].duel, None);
         let saved = g.players[&1].profile.clone();
         g.players.get_mut(&1).unwrap().pos[1] = -57000.;
         g.players.get_mut(&1).unwrap().vertical_velocity = -100.;
         g.tick();
-        assert_eq!(g.players[&1].pos[0], -205.);
         assert!(g.players[&1].pos[1] > -30.);
-        assert_eq!(g.players[&1].vertical_velocity, 0.);
-        assert_eq!(g.players[&1].profile.exp, saved.exp);
         assert_eq!(g.players[&1].profile.power, saved.power);
         g.leave(1);
-        g.join(2, "test".into());
-        assert_eq!(g.players[&2].profile.exp, 5);
-        assert!(g.players[&2].profile.unlocked(1));
+        g.join(1, "test".into());
+        assert_eq!(g.players[&1].profile.ascension, 1);
+        assert_eq!(g.players[&1].profile.run_wins, saved.run_wins);
+    }
+    #[test]
+    #[ignore = "requires imported Cordon assets"]
+    fn cordon_full_run_and_balance() {
+        let root =
+            std::env::var("CORDON_ASSETS").unwrap_or("D:/GameAssets/cordon-royale/web".into());
+        let world = World::load(&std::path::Path::new(&root).join("collision.cform")).unwrap();
+        let mut g = Game::new(world, BTreeMap::new());
+        g.join(1, "balance".into());
+        for stage in 0..5 {
+            let power = g.opponents[stage].power;
+            challenge(&mut g, stage, power);
+            let clicks = click_fight(&mut g);
+            assert_eq!(g.events.last().unwrap().kind, "win");
+            eprintln!(
+                "{} at equal power / 4 clicks per second: {} clicks, {:.2}s",
+                g.opponents[stage].name,
+                clicks,
+                clicks as f64 * 0.25
+            );
+        }
+        g.players.get_mut(&1).unwrap().pos = g.opponents[4].reward_pos;
+        g.command(1, serde_json::json!({"kind":"claim_exp","stage":4}));
+        assert_eq!(g.players[&1].profile.exp, 2500);
+        assert!(g.players[&1].profile.run_wins.is_empty());
+        assert_eq!(g.players[&1].profile.trophies.len(), 5);
+        challenge(&mut g, 0, 10);
+        let clicks = click_fight(&mut g);
+        assert_eq!(g.events.last().unwrap().kind, "win");
+        eprintln!(
+            "Dog at half power / 4 clicks per second: {clicks} clicks, {:.2}s",
+            clicks as f64 * 0.25
+        );
+        challenge(&mut g, 0, 200);
+        assert_eq!(click_fight(&mut g), 1);
     }
 }

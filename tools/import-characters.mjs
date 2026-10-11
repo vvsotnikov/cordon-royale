@@ -8,6 +8,7 @@ if(path.resolve(out).toLowerCase().startsWith(repo.toLowerCase()+path.sep)||path
 function chunks(b){const m=new Map();for(let p=0;p<b.length;){const id=b.readUInt32LE(p),n=b.readUInt32LE(p+4);if(id&0x80000000||p+8+n>b.length)throw Error('Unsupported OGF chunk');m.set(id,b.subarray(p+8,p+8+n));p+=8+n;}return m;}
 function reader(b){return {b,p:0,u(){const v=b.readUInt32LE(this.p);this.p+=4;return v;},f(){const v=b.readFloatLE(this.p);this.p+=4;return v;},s(){const end=b.indexOf(0,this.p);if(end<0)throw Error('Missing string terminator');const v=b.toString('utf8',this.p,end);this.p=end+1;return v;}};}
 const models={stalker:'actors/stalker_neutral/st_nt_1',bandit:'actors/stalker_bandit/stalker_bandit2a',mercenary:'actors/stalker_merc/stalker_merc_0',dog:'monsters/dog/dog',bloodsucker:'monsters/krovosos/krovosos',controller:'monsters/controller/controller_1'};
+Object.assign(models,{player_0:'actors/stalker_hero_coc/sviter_3',player_1:'actors/stalker_neutral/stalker_neutral0a',player_2:'actors/stalker_neutral/stalker_neutral1a',player_3:'actors/stalker_neutral/stalker_neutral3a',player_4:'actors/stalker_neutral/stalker_neutral4a',player_5:'actors/stalker_dolg/stalker_dolg4nosorog'});
 const result={},textures=new Set();
 for(const [name,file] of Object.entries(models)){
  const c=chunks(fs.readFileSync(path.join(source,'meshes',file+'.ogf'))),r=reader(c.get(13)),count=r.u(),bones=[];

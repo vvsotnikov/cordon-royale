@@ -28,13 +28,17 @@ try{
  while(a.profile.power<20)await sleep(500);
  a.send({kind:'sit'});await sleep(100);const trained=a.profile.power;
  a.send({kind:'home'});await sleep(100);a.send({kind:'challenge'});await sleep(200);assert.equal(a.state.players.find(p=>p.id===a.id).duel,0,'nearest enemy chosen by server');
- await sleep(1000);assert.equal(a.state.players.find(p=>p.id===a.id).duel_health,200,'waiting deals no damage');
- for(let n=0;n<10;n++){a.send({kind:'attack',damage:999999});await sleep(100);}
+ const initial=a.state.players.find(p=>p.id===a.id).duel_progress;await sleep(500);assert(a.state.players.find(p=>p.id===a.id).duel_progress<initial,'opponent pushes back');
+ for(let n=0;n<40&&a.state.players.find(p=>p.id===a.id).duel!==null;n++){a.send({kind:'attack',damage:999999});await sleep(250);}
  await sleep(150);assert(a.profile.trophies.includes(0));assert.equal(a.profile.power,trained);assert.equal(a.profile.exp,0,'victories do not directly grant EXP');
  a.send({kind:'buy',item:4});await sleep(100);assert.equal(a.profile.weapon,0,'trader removed');
- const marker=a.state.opponents[0].reward_pos;
- for(let n=0;n<80;n++){const pos=a.state.players.find(p=>p.id===a.id).pos,dx=marker[0]-pos[0],dz=marker[2]-pos[2];if(Math.hypot(dx,dz)<1.5)break;a.send({kind:'input',forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(70);}
- a.send({kind:'input'});await sleep(100);a.send({kind:'claim_exp',stage:0});await sleep(150);assert.equal(a.profile.exp,1);assert.equal(a.state.players.find(p=>p.id===a.id).pos[0],-205,'EXP returns to camp');
+ for(let run=0;run<5;run++){
+  if(run>0){a.send({kind:'challenge'});await sleep(150);for(let n=0;n<40&&a.state.players.find(p=>p.id===a.id).duel!==null;n++){a.send({kind:'attack'});await sleep(250);}}
+  const marker=a.state.opponents[0].reward_pos;
+  for(let n=0;n<80;n++){const pos=a.state.players.find(p=>p.id===a.id).pos,dx=marker[0]-pos[0],dz=marker[2]-pos[2];if(Math.hypot(dx,dz)<1.5)break;a.send({kind:'input',forward:1,yaw:Math.atan2(-dx,-dz)});await sleep(70);}
+  a.send({kind:'input'});await sleep(100);a.send({kind:'claim_exp',stage:0});await sleep(150);assert.equal(a.profile.exp,run+1);assert.deepEqual(a.profile.run_wins,[]);assert.equal(a.state.players.find(p=>p.id===a.id).pos[0],-205);
+ }
+ a.send({kind:'ascend',tier:1});await sleep(150);assert.equal(a.profile.ascension,1);assert.equal(a.profile.exp,0);
  const saved=structuredClone(a.profile);saved.inventory.sort((a,b)=>a-b);a.ws.close();await sleep(300);
  const resumed=await client(token);try{assert.deepEqual(resumed.profile,saved)}finally{resumed.ws.close()}
  await sleep(2200);

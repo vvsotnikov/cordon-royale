@@ -48,6 +48,52 @@ pub const ITEMS: [Item; 8] = [
     },
 ];
 
+#[derive(Serialize)]
+pub struct ArmorTier {
+    pub name: &'static str,
+    pub cost: u64,
+    pub gain: u64,
+    pub model: &'static str,
+}
+pub const ARMORS: [ArmorTier; 6] = [
+    ArmorTier {
+        name: "No armor",
+        cost: 0,
+        gain: 1,
+        model: "player_0",
+    },
+    ArmorTier {
+        name: "Leather jacket",
+        cost: 5,
+        gain: 3,
+        model: "player_1",
+    },
+    ArmorTier {
+        name: "Sunrise suit",
+        cost: 25,
+        gain: 10,
+        model: "player_2",
+    },
+    ArmorTier {
+        name: "SEVA suit",
+        cost: 100,
+        gain: 35,
+        model: "player_3",
+    },
+    ArmorTier {
+        name: "Exoskeleton",
+        cost: 500,
+        gain: 100,
+        model: "player_4",
+    },
+    ArmorTier {
+        name: "Nosorog exoskeleton",
+        cost: 2000,
+        gain: 300,
+        model: "player_5",
+    },
+];
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct Profile {
@@ -59,6 +105,8 @@ pub struct Profile {
     pub weapon: usize,
     pub armor: usize,
     pub trophies: Vec<usize>,
+    pub run_wins: Vec<usize>,
+    pub ascension: usize,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -71,6 +119,8 @@ impl Default for Profile {
             weapon: 0,
             armor: 5,
             trophies: vec![],
+            run_wins: vec![],
+            ascension: 0,
         }
     }
 }
@@ -86,6 +136,10 @@ impl Profile {
         if !self.inventory.contains(&self.armor) || ITEMS[self.armor].slot != "armor" {
             self.armor = 5;
         }
+        self.ascension = self.ascension.min(ARMORS.len() - 1);
+        self.run_wins.retain(|&n| n < 5);
+        self.run_wins.sort_unstable();
+        self.run_wins.dedup();
         self.trophies.retain(|&n| n < 5);
         self.trophies.sort_unstable();
         self.trophies.dedup();
@@ -100,7 +154,21 @@ impl Profile {
         }
     }
     pub fn gain(&self) -> u64 {
-        1
+        ARMORS[self.ascension].gain
+    }
+    pub fn ascend(&mut self) -> Result<(), &'static str> {
+        let next = ARMORS
+            .get(self.ascension + 1)
+            .ok_or("Already wearing Nosorog armor.")?;
+        if self.exp < next.cost {
+            return Err("Earn more EXP to ascend.");
+        }
+        self.exp -= next.cost;
+        self.ascension += 1;
+        Ok(())
+    }
+    pub fn reward_unlocked(&self, stage: usize) -> bool {
+        self.unlocked(stage) && !self.run_wins.is_empty()
     }
     pub fn strength(&self) -> u64 {
         self.power
@@ -114,7 +182,7 @@ impl Profile {
             .min(1_000_000_000_000);
     }
     pub fn unlocked(&self, stage: usize) -> bool {
-        stage == 0 || self.trophies.contains(&(stage - 1))
+        stage == 0 || self.run_wins.contains(&(stage - 1))
     }
     pub fn equip(&mut self, n: usize) -> Result<(), &'static str> {
         if n >= ITEMS.len() || !self.inventory.contains(&n) {
@@ -131,7 +199,11 @@ impl Profile {
         if !self.trophies.contains(&stage) {
             self.trophies.push(stage);
         }
-        let drop = roll < 5;
+        let first = !self.run_wins.contains(&stage);
+        if first {
+            self.run_wins.push(stage);
+        }
+        let drop = first && roll < 5;
         if drop {
             self.lootboxes = self.lootboxes.saturating_add(1);
         }
@@ -142,7 +214,7 @@ impl Profile {
             return Err("No lootboxes. Each victory has a 5% drop chance.");
         }
         self.lootboxes -= 1;
-        let pool = [1, 2, 3, 4, 6, 7];
+        let pool = [1, 2, 3, 4];
         let missing: Vec<_> = pool
             .into_iter()
             .filter(|n| !self.inventory.contains(n))
@@ -166,6 +238,8 @@ mod tests {
         assert!(!p.victory(0, 5));
         assert!(p.unlocked(1));
         assert_eq!(p.lootboxes, 0);
+        assert!(!p.victory(0, 4), "one loot roll per stage per run");
+        p.run_wins.clear();
         assert!(p.victory(0, 4));
         assert_eq!(p.lootboxes, 1);
         assert!(p.equip(4).is_err());
@@ -177,12 +251,39 @@ mod tests {
         assert_eq!(p.strength(), 30);
     }
     #[test]
+    fn ascension_costs_and_persistence() {
+        let mut p = Profile::default();
+        p.power = 123;
+        p.exp = 2630;
+        p.victory(0, 99);
+        for tier in 1..ARMORS.len() {
+            let exp = p.exp;
+            p.ascend().unwrap();
+            assert_eq!(p.exp, exp - ARMORS[tier].cost);
+            assert_eq!(p.gain(), ARMORS[tier].gain);
+            assert_eq!(p.power, 123);
+            assert!(p.unlocked(1));
+        }
+        assert_eq!(p.exp, 0);
+        assert!(p.ascend().is_err());
+        let mut restored: Profile =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        restored.sanitize();
+        assert_eq!(restored.gain(), 300);
+        assert_eq!(restored.run_wins, p.run_wins);
+        let mut poor = Profile::default();
+        assert!(poor.ascend().is_err());
+        assert_eq!(poor.exp, 0);
+        assert_eq!(poor.ascension, 0);
+    }
+    #[test]
     fn old_profile_migrates() {
         let mut p:Profile=serde_json::from_str(r#"{"name":"Old","power":100,"wins":3,"rubles":90,"rank":2,"inventory":[0,1,5],"trophies":[0]}"#).unwrap();
         p.sanitize();
         assert_eq!(p.exp, 0);
         assert_eq!(p.power, 100);
         assert!(p.inventory.contains(&1));
-        assert!(p.unlocked(1));
+        assert!(p.trophies.contains(&0));
+        assert!(!p.unlocked(1), "old saves begin a fresh run");
     }
 }
