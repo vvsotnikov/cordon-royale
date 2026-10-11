@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {DDSLoader} from './vendor/DDSLoader.js';
 import {ResourceCache} from './resource-cache.js';
+import {MovementSample} from './locomotion.js';
 import {FollowCamera} from './follow-camera.js';
 import {loadCharacters,animateCharacter} from './characters.js';
 let createCharacter, jumpQueued=false;
@@ -113,7 +114,7 @@ function frame(now){
   const present=new Set();for(const p of state.players){present.add(p.id);let actor=actors.get(p.id);if(!actor){actor=stalker();actors.set(p.id,actor);actor.position.fromArray(p.pos);const tag=label(p.profile.name);tag.position.y=2.15;tag.visible=p.id!==id;actor.add(tag);}
    const previousX=actor.position.x,previousZ=actor.position.z;actor.position.lerp(new THREE.Vector3(...p.pos),1-Math.exp(-dt*18));actor.rotation.y=p.yaw;
    const data=actor.userData,dx=actor.position.x-previousX,dz=actor.position.z-previousZ;
-   const speed=Math.hypot(dx,dz)/Math.max(dt,.001);data.speed=(data.speed||0)+(Math.min(speed,8)-(data.speed||0))*(1-Math.exp(-dt*12));
+   data.movement??=new MovementSample();data.speed=data.movement.update(p.pos,state.time);
    if(data.speed>.2)actor.rotation.y=Math.atan2(-dx,-dz);
    animateCharacter(actor,now,data.speed,p.duel!==null,p.sitting);
    if(p.duel!==null){const o=state.opponents[p.duel];actor.rotation.y=Math.atan2(-(o.pos[0]-p.pos[0]),-(o.pos[2]-p.pos[2]));

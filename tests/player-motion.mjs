@@ -7,3 +7,12 @@ for(const [state,speed] of [['idle',0],['walk',4.8],['run',7.4],['idle',0]]){
  assert.equal(player.userData.motion.state,state);const bone=n=>player.userData.bones.find(b=>b.name===n).getWorldPosition(new T.Vector3());assert(bone('eye_left').sub(bone('bip01_head')).z<0,state+' faces forward');console.log(state+' animates and faces forward');
 }
 animateCharacter(player,now+=16,0,false,true);assert.equal(player.userData.motion.state,null);animateCharacter(player,now+=16,4.8,false,false);assert.equal(player.userData.motion.state,'walk');console.log('PASS sit interrupts motion; walking resumes');
+
+// Small network-speed fluctuations must not reset the running action.
+for(let i=0;i<40;i++)animateCharacter(player,now+=16,7.4,false);
+const run=player.userData.motion.actions.run,before=run.time;
+animateCharacter(player,now+=16,5.9,false);animateCharacter(player,now+=16,7.4,false);
+assert.equal(player.userData.motion.state,'run');assert(Math.abs(run.time-((before+.032)%run.getClip().duration))<1e-5);
+const phase=run.time/run.getClip().duration;animateCharacter(player,now,4.8,false);
+assert(Math.abs(player.userData.motion.actions.walk.time/player.userData.motion.actions.walk.getClip().duration-phase)<1e-5,'walk/run transition preserves stride');
+console.log('PASS running phase survives jitter and walk transitions');

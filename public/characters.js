@@ -1,4 +1,5 @@
 import * as THREE from './vendor/three.module.js';
+import {locomotionState} from './locomotion.js';
 // OGF bind rotations use X-Ray's setXYZi convention, followed by a Z reflection.
 function bindMatrix(b){
  const [x,y,z]=b.rotation,h=-y,p=-x,t=-z,sh=Math.sin(h),ch=Math.cos(h),sp=Math.sin(p),cp=Math.cos(p),sb=Math.sin(t),cb=Math.cos(t);
@@ -56,9 +57,10 @@ export function animateCharacter(root,time,moving,active,sitting=false){
  if(motion){
   const dt=motion.lastTime===null?0:Math.min(.1,Math.max(0,(time-motion.lastTime)/1000));motion.lastTime=time;
   if(!sitting){
-   const speed=typeof moving==='number'?moving:(moving?4.8:0),state=speed<.2?'idle':speed>6?'run':'walk';
+   const speed=typeof moving==='number'?moving:(moving?4.8:0),state=locomotionState(speed,motion.state);
    model.rotation.y=0;
-   if(state!==motion.state){const previous=motion.actions[motion.state],next=motion.actions[state];next.reset().setEffectiveWeight(1).play();if(previous)previous.crossFadeTo(next,.18,false);motion.state=state;}
+   if(state!==motion.state){const previous=motion.actions[motion.state],next=motion.actions[state];const phase=previous&&motion.state!=='idle'&&state!=='idle'?previous.time/previous.getClip().duration:0;
+    next.reset().setEffectiveWeight(1).play();next.time=phase*next.getClip().duration;if(previous)previous.crossFadeTo(next,.18,false);motion.state=state;}
    motion.mixer.update(dt);return;
   }
   motion.mixer.stopAllAction();motion.state=null;model.rotation.y=Math.PI;

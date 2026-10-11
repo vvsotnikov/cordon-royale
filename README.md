@@ -80,6 +80,7 @@ node tests/resource-cache.mjs
 node tests/dds.mjs
 node tests/world-materials.mjs
 node tests/follow-camera.mjs
+node tests/locomotion.mjs
 node tests/collision-materials.mjs
 node tests/character-idles.mjs D:/GameAssets/cordon-royale/web
 node tests/player-motion.mjs D:/GameAssets/cordon-royale/web
