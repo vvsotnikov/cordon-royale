@@ -141,16 +141,17 @@ async function loadWorld(){
  $('loading').textContent='Loading Cordon geometry from your local installation…';const data=await resources.get('world.bin');
  const textureCache=new Map();
  async function texture(name,linear=false){if(!textureCache.has(name))textureCache.set(name,(async()=>{const bytes=await resources.get('textures/'+name+'.dds'),url=URL.createObjectURL(new Blob([bytes]));try{const t=await dds.loadAsync(url);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=linear?THREE.NoColorSpace:THREE.SRGBColorSpace;t.anisotropy=4;return t;}finally{URL.revokeObjectURL(url);}})());return textureCache.get(name);}
+ const sky=await texture('sky/sky_1_clouds_cube');sky.isCubeTexture=true;sky.mapping=THREE.CubeReflectionMapping;sky.wrapS=sky.wrapT=THREE.ClampToEdgeWrapping;scene.background=sky;
  createCharacter=await loadCharacters(resources,texture);
  const terrain=await Promise.all(['terrain/terrain_escape_mask','detail/detail_grnd_grass','detail/detail_asfalt_det1','detail/detail_earth_det1','detail/detail_grnd_pebbles'].map((n,i)=>texture(n,i===0)));
  const textureJobs=[];for(let index=0;index<info.meshes.length;index++){
-  const m=info.meshes[index];let material=materials.get(m.texture);if(!material){material=new THREE.MeshStandardMaterial({color:0xbabbb0,roughness:1,side:THREE.DoubleSide,alphaTest:m.alpha?.45:0});if(m.texture==='terrain/terrain_escape'){material.onBeforeCompile=shader=>{['groundMask','groundGrass','groundRoad','groundEarth','groundStones'].forEach((n,i)=>shader.uniforms[n]={value:terrain[i]});shader.fragmentShader='uniform sampler2D groundMask,groundGrass,groundRoad,groundEarth,groundStones;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
+  const m=info.meshes[index];const materialKey=m.texture+':'+Boolean(m.alpha);let material=materials.get(materialKey);if(!material){material=new THREE.MeshStandardMaterial({color:0xbabbb0,roughness:1,side:THREE.DoubleSide,alphaTest:m.alpha?.45:0});if(m.texture==='terrain/terrain_escape'){material.onBeforeCompile=shader=>{['groundMask','groundGrass','groundRoad','groundEarth','groundStones'].forEach((n,i)=>shader.uniforms[n]={value:terrain[i]});shader.fragmentShader='uniform sampler2D groundMask,groundGrass,groundRoad,groundEarth,groundStones;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
 #ifdef USE_MAP
 vec4 blend=texture2D(groundMask,vMapUv);blend/=max(dot(blend,vec4(1.0)),0.001);
 vec2 groundUV=vMapUv*100.0;
 vec3 detail=texture2D(groundGrass,groundUV).rgb*blend.r+texture2D(groundRoad,groundUV).rgb*blend.g+texture2D(groundEarth,groundUV).rgb*blend.b+texture2D(groundStones,groundUV).rgb*blend.a;
 diffuseColor.rgb*=detail*2.0;
-#endif`);};}materials.set(m.texture,material);textureJobs.push({material,name:m.texture});}
+#endif`);};}materials.set(materialKey,material);textureJobs.push({material,name:m.texture});}
   const geometry=new THREE.BufferGeometry(),interleaved=new THREE.InterleavedBuffer(new Float32Array(data,m.offset,m.vertices*5),5);
   geometry.setAttribute('position',new THREE.InterleavedBufferAttribute(interleaved,3,0));geometry.setAttribute('uv',new THREE.InterleavedBufferAttribute(interleaved,2,3));geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(data,m.offset+m.vertices*20,m.indices),1));geometry.computeVertexNormals();geometry.computeBoundingSphere();const mesh=new THREE.Mesh(geometry,material);mesh.userData.cameraSolid=!m.alpha;mesh.matrixAutoUpdate=false;mesh.updateMatrix();scene.add(mesh);staticMeshes.push(mesh);
   if(index%400===0){$('loading').textContent=`Building Cordon · ${Math.round(index/info.meshes.length*100)}%`;await new Promise(r=>setTimeout(r,0));}

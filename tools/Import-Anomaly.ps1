@@ -17,7 +17,7 @@ Get-ChildItem "$Anomaly/db/textures" -File | Where-Object {$_.Name -notmatch 'ac
     & "$Anomaly/tools/converter.exe" -unpack -xdb $_.FullName -dir $base
     if($LASTEXITCODE){throw "Texture extraction failed: $($_.Name)"}
 }
-foreach($archive in @('meshes/meshes.db0','meshes/meshes_actors.db0','textures/textures_actors.db0','textures/textures_actors.db1')){
+foreach($archive in @('textures/textures_sky.db0','meshes/meshes.db0','meshes/meshes_actors.db0','textures/textures_actors.db0','textures/textures_actors.db1')){
     & "$Anomaly/tools/converter.exe" -unpack -xdb "$Anomaly/db/$archive" -dir $base
     if($LASTEXITCODE){throw "Character extraction failed: $archive"}
 }
@@ -25,6 +25,8 @@ foreach($archive in @('meshes/meshes.db0','meshes/meshes_actors.db0','textures/t
 if($LASTEXITCODE){throw 'Character conversion failed'}
 & node "$PSScriptRoot/import-idles.mjs" $base $web
 if($LASTEXITCODE){throw 'Idle animation conversion failed'}
+New-Item -ItemType Directory "$web/textures/sky" -Force | Out-Null
+Copy-Item "$base/textures/sky/sky_1_clouds_cube.dds" "$web/textures/sky/sky_1_clouds_cube.dds"
 $sources=@("$base/textures","$Anomaly/gamedata/textures")
 # MO2 modlist is highest priority first; reverse it so later copies win.
 if(Test-Path "$Gamma/profiles/$Profile/modlist.txt"){

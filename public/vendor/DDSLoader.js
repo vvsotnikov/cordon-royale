@@ -4,10 +4,10 @@ import {
 	RGBA_S3TC_DXT3_Format,
 	RGBA_S3TC_DXT5_Format,
 	RGB_ETC1_Format,
-	RGB_S3TC_DXT1_Format,
+	RGBA_S3TC_DXT1_Format,
 	RGB_BPTC_SIGNED_Format,
 	RGB_BPTC_UNSIGNED_Format
-} from 'three';
+} from './three.module.js';
 
 /**
  * A loader for the S3TC texture compression format.
@@ -222,7 +222,8 @@ class DDSLoader extends CompressedTextureLoader {
 			case FOURCC_DXT1:
 
 				blockBytes = 8;
-				dds.format = RGB_S3TC_DXT1_Format;
+				// Preserve DXT1 one-bit alpha used by X-Ray foliage cutouts.
+				dds.format = RGBA_S3TC_DXT1_Format;
 				break;
 
 			case FOURCC_DXT3:
@@ -376,6 +377,25 @@ class DDSLoader extends CompressedTextureLoader {
 
 		}
 
+		// WebGL S3TC uploads require a base level at least one 4x4 block.
+		// X-Ray uses 2x2 transparent placeholder textures for disabled tree fronds.
+		if ( dds.format === RGBA_S3TC_DXT1_Format && ( dds.width < 4 || dds.height < 4 ) ) {
+			for ( const mip of dds.mipmaps ) {
+				const source = mip.data, rgba = new Uint8Array( mip.width * mip.height * 4 );
+				for ( let y = 0; y < mip.height; y ++ ) for ( let x = 0; x < mip.width; x ++ ) {
+					const block = ( Math.floor( y / 4 ) * Math.ceil( mip.width / 4 ) + Math.floor( x / 4 ) ) * 8;
+					const a = source[ block ] | source[ block + 1 ] << 8, b = source[ block + 2 ] | source[ block + 3 ] << 8;
+					const rgb = v => [ ( v >> 11 ) * 255 / 31, ( v >> 5 & 63 ) * 255 / 63, ( v & 31 ) * 255 / 31, 255 ];
+					const colors = [ rgb( a ), rgb( b ) ];
+					colors.push( colors[ 0 ].map( ( v, i ) => a > b ? ( 2 * v + colors[ 1 ][ i ] ) / 3 : ( v + colors[ 1 ][ i ] ) / 2 ) );
+					colors.push( a > b ? colors[ 0 ].map( ( v, i ) => ( v + 2 * colors[ 1 ][ i ] ) / 3 ) : [ 0, 0, 0, 0 ] );
+					const pixel = ( y % 4 ) * 4 + x % 4, index = source[ block + 4 + ( pixel >> 2 ) ] >> ( ( pixel & 3 ) * 2 ) & 3;
+					rgba.set( colors[ index ], ( y * mip.width + x ) * 4 );
+				}
+				mip.data = rgba;
+			}
+			dds.format = RGBAFormat;
+		}
 		return dds;
 
 	}
